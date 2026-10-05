@@ -34,6 +34,8 @@ pre.report{font:12px/1.45 var(--mono);white-space:pre-wrap;max-height:520px;over
   <a class="logo" href="/">FLYBRAIN<small>EARS &amp; EYES · FB-166700</small></a>
   <nav class="keys" aria-label="sections">
     <a class="key on" href="#watch"><i></i>WATCH</a>
+    <a class="key" href="#result"><i></i>RESULT</a>
+    <a class="key" href="#" id="navview" title="watch or pick a video first"><i></i>BRAIN &amp; BODY</a>
     <a class="key" href="#library"><i></i>LIBRARY</a>
     <a class="key" href="#music"><i></i>MUSIC TEST</a>
   </nav>
@@ -58,11 +60,15 @@ pre.report{font:12px/1.45 var(--mono);white-space:pre-wrap;max-height:520px;over
    <div class="msg" id="msg" role="status" aria-live="polite"></div>
    <div class="hint">About 20 s of computing per minute of video on a GPU, then it plays below. Use videos you have the right to use.</div>
   </section>
-  <section class="card" id="result" hidden><h2><span>What the fly saw and heard</span><span id="rname"></span></h2>
+  <section class="card" id="result"><h2><span>What the fly saw and heard</span><span id="rname">nothing chosen</span></h2>
+   <p id="rnone">Watch a video above, or pick one in the <a href="#library">Library</a>: it plays here, with the fly's biggest responses.</p>
+   <div id="rbody" hidden>
+   <div class="row" style="margin:0 0 10px"><a class="key" id="openview" href="#" style="font-size:12px;padding:10px 16px 9px"><i style="background:var(--led);box-shadow:0 0 6px var(--led)"></i>OPEN BRAIN, BODY &amp; EMOTIONS</a></div>
    <div class="screen" style="padding:4px"><video id="player" controls playsinline></video></div>
    <div class="links" id="rlinks"></div>
    <div class="screen" style="margin-top:10px"><table id="rtable"><thead><tr><th>neuron group</th><th class="n">at rest</th><th class="n">watching</th><th class="n">change</th></tr></thead><tbody></tbody></table></div>
    <p style="margin-top:8px">Spikes per neuron per second. Rest = a plain grey view in silence.</p>
+   </div>
   </section>
   <section class="card" id="music"><h2><span>Music test: human vs AI</span></h2>
    <p>A folder with <code>human\</code> and <code>ai\</code> subfolders of songs (at least 4 each; 20+ each for real conclusions). Checks, decided in advance, whether the fly brain's response tells them apart beyond chance, beyond its own ear input and beyond a scrambled brain.</p>
@@ -126,10 +132,23 @@ $("mgo").onclick = async () => {
   $("mmsg").textContent = r.ok ? "listening... (a few minutes)" : r.error;
 };
 $("stop").onclick = () => post("/stop", {});
+// the tab keys light up for the section you go to
+document.querySelectorAll(".keys a").forEach((a) => a.addEventListener("click", () => {
+  document.querySelectorAll(".keys a").forEach((x) => x.classList.toggle("on", x === a));
+}));
+$("navview").addEventListener("click", (e) => { if ($("navview").getAttribute("href") === "#") { e.preventDefault(); $("msg").textContent = "watch a video or pick one in the Library first"; } });
 
-function show(item) {
+function show(item, jump) {
   current = item.name;
-  $("result").hidden = false;
+  $("rnone").hidden = true;
+  $("rbody").hidden = false;
+  const view = `/view?name=${encodeURIComponent(item.name)}`;
+  for (const a of [$("openview"), $("navview")]) {
+    a.href = item.view ? view : "#result";
+    a.title = item.view ? "the fly's brain, body and emotions, synced to this video" : "watch this video again to make its brain & body view";
+  }
+  $("openview").style.opacity = item.view ? 1 : 0.5;
+  if (jump) $("result").scrollIntoView({ behavior: "smooth", block: "start" });
   $("rname").textContent = item.name;
   const base = "/media/" + encodeURIComponent(item.name) + "/";
   if (!$("player").src.endsWith(base + "fly_watching.mp4")) $("player").src = base + "fly_watching.mp4";
@@ -145,7 +164,7 @@ async function refreshLibrary() {
   $("lib").innerHTML = LIB.length ? LIB.map((it) =>
     `<div class="item" data-name="${esc(it.name)}" tabindex="0" role="button"><div><b>${esc(it.name)}</b><span>${new Date(it.when * 1000).toLocaleString()} · ${Math.round(it.seconds)} s${it.rewired ? " · scrambled brain" : ""}${it.sound ? "" : " · no sound"}</span></div><span>▶</span></div>`).join("") : "<p>Nothing watched yet.</p>";
   document.querySelectorAll(".item[data-name]").forEach((e) => {
-    const open = () => show(LIB.find((x) => x.name === e.dataset.name));
+    const open = () => show(LIB.find((x) => x.name === e.dataset.name), true);
     e.onclick = open; e.onkeydown = (ev) => { if (ev.key === "Enter") open(); };
   });
   const reps = await (await fetch("/reports")).json();
@@ -170,7 +189,7 @@ async function poll() {
     $("jtime").textContent = j.seconds ? `${j.seconds} s` : "";
     if (lastState === "running" && j.state !== "running") {
       await refreshLibrary();
-      if (j.state === "done" && j.kind === "watch" && j.result) { const it = LIB.find((x) => x.name === j.result); if (it) { show(it); $("msg").textContent = "done: playing below"; } }
+      if (j.state === "done" && j.kind === "watch" && j.result) { const it = LIB.find((x) => x.name === j.result); if (it) { show(it, true); $("msg").textContent = "done: playing below"; } }
       if (j.state === "done" && j.kind === "music" && j.result) { showReport(j.result); $("mmsg").textContent = "done"; }
       if (j.state === "stopped") { (j.kind === "music" ? $("mmsg") : $("msg")).textContent = "stopped"; }
       if (j.state === "error") { (j.kind === "music" ? $("mmsg") : $("msg")).textContent = "stopped: " + (j.log[j.log.length - 1] || "an error (see the log)"); }
