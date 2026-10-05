@@ -1,0 +1,361 @@
+"""The fly watches a video: every frame through its eyes, the soundtrack through its ears.
+
+    python watch.py "https://www.youtube.com/watch?v=..."      # needs yt-dlp (pip install yt-dlp)
+    python watch.py my_video.mp4 --start 30 --seconds 60
+    python watch.py my_video.mp4 --rewired                      # a scrambled brain, for comparison
+
+Each video frame (25 a second) is two brain steps (20 ms each). Out (out/watch/<name>/):
+  fly_watching.mp4   the video with the fly's brain beside it, live, with the original sound
+  timeline.csv       every 20 ms: spike rates of each neuron group, looming, ear bands
+  summary.json       how strongly each group responded to the video compared with rest
+
+Use videos you have the right to download and use; downloads stay in out/watch/downloads.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import shutil
+import subprocess
+import time
+from pathlib import Path
+
+import numpy as np
+
+from flyears import audio, ear, listen, vision
+
+HERE = Path(__file__).resolve().parent
+FPS = 25
+STEPS_PER_FRAME = 2                      # 40 ms frames, 20 ms brain steps
+REST_SETTLE, REST_MEASURE = 100, 100     # steps: 2 s to settle, then 2 s of rest measured
+VW, VH = 768, 432                        # the video in the output
+OUT_W, OUT_H = 1280, 720
+FONT = Path("C:/Windows/Fonts/consola.ttf")
+CASE, SCREEN, AMBER, GREEN, RED, CYAN, DIM = ((203, 199, 190), (21, 22, 25), (255, 178, 62), (108, 240, 138),
+                                               (255, 90, 90), (62, 216, 255), (60, 62, 68))
+
+
+def log(*a):
+    print(*a, flush=True)
+
+
+# ---------------------------------------------------------------- getting the video
+def fetch(source: str, folder: Path) -> Path:
+    if not re.match(r"https?://", source):
+        p = Path(source)
+        if not p.exists():
+            raise SystemExit(f"no such file: {p}")
+        return p
+    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        import yt_dlp
+    except ImportError:
+        yt_dlp = None
+    opts = {"format": "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/b[height<=720]/b",
+            "outtmpl": str(folder / "%(id)s.%(ext)s"), "merge_output_format": "mp4", "quiet": True,
+            "noplaylist": True}
+    if yt_dlp is not None:
+        with yt_dlp.YoutubeDL(opts) as y:
+            info = y.extract_info(source, download=True)
+            return Path(y.prepare_filename(info)).with_suffix(".mp4")
+    if shutil.which("yt-dlp"):
+        subprocess.run(["yt-dlp", "-f", opts["format"], "--merge-output-format", "mp4", "--no-playlist",
+                        "-o", opts["outtmpl"], source], check=True)
+        return max(folder.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
+    raise SystemExit("YouTube links need yt-dlp: pip install yt-dlp (or download the video and give the file)")
+
+
+def duration(src: Path) -> float:
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(src)],
+                       capture_output=True, text=True)
+    return float(r.stdout.strip() or 0)
+
+
+def has_audio(src: Path) -> bool:
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index",
+                        "-of", "csv=p=0", str(src)], capture_output=True, text=True)
+    return bool(r.stdout.strip())
+
+
+def small_frames(src: Path, start: float, seconds: float) -> np.ndarray:
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(start), "-t", str(seconds), "-i", str(src), "-vf",
+                          f"fps={FPS},scale={vision.FLOW_W}:{vision.FLOW_H},format=gray", "-f", "rawvideo", "pipe:1"],
+                         capture_output=True, check=True).stdout
+    return np.frombuffer(raw, np.uint8).reshape(-1, vision.FLOW_H, vision.FLOW_W)
+
+
+def soundtrack(src: Path, start: float, seconds: float) -> np.ndarray:
+    if not has_audio(src):
+        return np.zeros(int(seconds * audio.EAR_SR), np.float32)
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(start), "-t", str(seconds), "-i", str(src), "-ac", "1",
+                          "-ar", str(audio.EAR_SR), "-f", "f32le", "pipe:1"], capture_output=True, check=True).stdout
+    return np.frombuffer(raw, np.float32).copy()
+
+
+# ---------------------------------------------------------------- the fly watching
+def recorded_groups(brain, eyes) -> dict[str, np.ndarray]:
+    g = {"T4/T5 (motion)": eyes.cells if eyes.has_motion else np.array([], int),
+         "LPLC2 (looming)": np.concatenate(list(eyes.lplc2.values())),
+         "photoreceptors": np.asarray(brain.visual)}
+    g.update(listen.groups(brain))
+    return {k: v for k, v in g.items() if len(v)}
+
+
+def code_arrays(n: int, groups: dict[str, np.ndarray]) -> list[np.ndarray]:
+    """Groups can overlap (T4/T5 are also 'visual_projection'...): each neuron gets one code per array."""
+    arrays: list[np.ndarray] = []
+    for j, idx in enumerate(groups.values()):
+        for a in arrays:
+            if np.all(a[idx] == -1):
+                a[idx] = j
+                break
+        else:
+            a = np.full(n, -1)
+            a[idx] = j
+            arrays.append(a)
+    return arrays
+
+
+def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool):
+    G = recorded_groups(brain, eyes)
+    names = list(G)
+    codes = code_arrays(brain.n, G)
+    K = len(names)
+    sizes = np.array([len(v) for v in G.values()], np.float32)
+    cells, bands = ear.ear_map(brain)
+    steps = len(frames) * STEPS_PER_FRAME
+    rates = np.zeros((steps, K), np.float32)
+    spikes, motion, loom = [], [], np.zeros((len(frames), 2), np.float32)
+    rest = np.zeros(K, np.float32)
+    grey = np.full((vision.FLOW_H, vision.FLOW_W), 128, np.uint8)
+    brain.reset(1)
+    for k in range(REST_SETTLE + REST_MEASURE):          # rest: a plain grey view, silence; the brain
+        f = brain.step(eye_drive=eyes.photoreceptors(grey))   # settles first, then rest is measured
+        if k >= REST_SETTLE:
+            rest += sum(np.bincount(c[f][c[f] >= 0], minlength=K) for c in codes) / REST_MEASURE
+    eyes.prev = None
+    t0 = time.perf_counter()
+    for i, frame in enumerate(frames):
+        photo, inject = eyes.see(frame)
+        fired_frame = []
+        for k in range(STEPS_PER_FRAME):
+            s = i * STEPS_PER_FRAME + k
+            sound = ear.injections(cells, bands, env[s][:, None]) if hear and s < len(env) else []
+            sound = [(idx, float(np.ravel(a)[0])) for idx, a in sound]
+            f = brain.step(eye_drive=photo, inject=inject + sound)
+            rates[s] = sum(np.bincount(c[f][c[f] >= 0], minlength=K) for c in codes)
+            fired_frame.append(f)
+        spikes.append(np.concatenate(fired_frame))
+        motion.append(eyes.last["motion"] if eyes.last["motion"] is not None else None)
+        loom[i] = eyes.last["loom"]
+        if (i + 1) % (FPS * 10) == 0 or i + 1 == len(frames):
+            log(f"  watched {(i + 1) / FPS:.0f} s of {len(frames) / FPS:.0f} s "
+                f"({(time.perf_counter() - t0) / (i + 1) * FPS:.1f} s per video second)")
+    to_rate = 1 / (sizes * brain.dt)
+    return names, rates * to_rate, rest * to_rate, spikes, motion, loom
+
+
+# ---------------------------------------------------------------- the picture
+def rect(img, x, y, w, h, color):
+    img[y:y + h, x:x + w] = color
+
+
+def screen(img, x, y, w, h):
+    rect(img, x - 3, y - 3, w + 6, h + 6, (11, 11, 13))
+    rect(img, x, y, w, h, SCREEN)
+
+
+def meter(img, x, y, w, h, value, color):
+    rect(img, x, y, w, h, (13, 14, 16))
+    n = int(np.clip(value, 0, 1) * w)
+    if n:
+        seg = img[y:y + h, x:x + n]
+        seg[:] = color
+        seg[:, (np.arange(n) % 9) >= 7] = (13, 14, 16)
+
+
+class Panel:
+    BRAIN = (812, 72, 444, 300)
+    EYES = ((812, 400, 214, 120), (1042, 400, 214, 120))
+    METERS = (812, 556, 444, 140)
+    LIST = ("ears (JO-A/B)", "ear JO-A/B"), ("auditory relay", "WED"), ("motion (T4/T5)", "T4/T5 (motion)"), \
+        ("looming (LPLC2)", "LPLC2 (looming)"), ("descending neurons", "descending_neuron")
+
+    def __init__(self, brain, eyes, names, rates):
+        self.names = names
+        base = np.zeros((OUT_H, OUT_W, 3), np.uint8)
+        base[:] = CASE
+        rect(base, 0, 0, OUT_W, 40, (37, 37, 40))
+        rect(base, 0, 40, OUT_W, 6, (22, 22, 24))
+        screen(base, 24, 72, VW, VH)
+        bx, by, bw, bh = self.BRAIN
+        screen(base, bx, by, bw, bh)
+        for (x, y, w, h) in self.EYES:
+            screen(base, x, y, w, h)
+        mx, my, mw, mh = self.METERS
+        screen(base, mx, my, mw, mh)
+        screen(base, 24, 556, VW, 140)
+        pos = np.asarray(brain.positions, np.float64)[:, :2]
+        known = np.all(np.isfinite(pos), 1)
+        pos = np.where(known[:, None], pos, np.nanmean(pos[known], 0))     # (a few neurons have no position)
+        self.known = known
+        lo, hi = pos[known].min(0), pos[known].max(0)
+        sc = min((bw - 20) / (hi[0] - lo[0]), (bh - 20) / (hi[1] - lo[1]))
+        xy = (pos - lo) * sc
+        off = ((bw - (hi[0] - lo[0]) * sc) / 2, (bh - (hi[1] - lo[1]) * sc) / 2)
+        self.bx = np.clip(xy[:, 0] + off[0], 0, bw - 1).astype(int)
+        self.by = np.clip(xy[:, 1] + off[1], 0, bh - 1).astype(int)
+        dots = np.zeros((bh, bw), np.float32)
+        np.add.at(dots, (self.by[known], self.bx[known]), 1)
+        sub = base[by:by + bh, bx:bx + bw].astype(np.float32)
+        sub += (np.clip(dots / 6, 0, 1)[..., None] * 70)
+        base[by:by + bh, bx:bx + bw] = np.clip(sub, 0, 255).astype(np.uint8)
+        self.base = base
+        self.glow = np.zeros((bh, bw), np.float32)
+        self.eye_px = None
+        if eyes.has_motion:
+            ex = []
+            for (x, y, w, h), side in zip(self.EYES, (True, False)):
+                m = eyes.left == side
+                front = np.where(side, 1 - (eyes.px[m] / (vision.FLOW_W - 1)) * 2, eyes.px[m] / (vision.FLOW_W - 1) * 2 - 1)
+                px = np.clip((eyes.px[m] / (vision.FLOW_W - 1) - (0 if side else 0.5)) * 2 * (w - 8) + 4, 0, w - 2).astype(int)
+                py = np.clip(eyes.py[m] / (vision.FLOW_H - 1) * (h - 8) + 4, 0, h - 2).astype(int)
+                ex.append((m, px, py))
+                base[y + py, x + px] = (44, 46, 52)                 # every cell, dim: the eye's shape
+                del front
+            self.eye_px = ex
+        self.scale = {k: max(np.quantile(rates[:, i], 0.98), 1e-6) for i, k in enumerate(names)}
+
+    def draw(self, frame_rgb, i, rates_frame, spikes, motion, loom, env):
+        img = self.base.copy()
+        img[72:72 + VH, 24:24 + VW] = frame_rgb
+        bx, by, bw, bh = self.BRAIN
+        self.glow *= 0.55
+        spikes = spikes[self.known[spikes]] if len(spikes) else spikes
+        if len(spikes):
+            np.add.at(self.glow, (self.by[spikes], self.bx[spikes]), 1.0)
+        g = np.clip(self.glow / 2, 0, 1)[..., None]
+        sub = img[by:by + bh, bx:bx + bw].astype(np.float32)
+        img[by:by + bh, bx:bx + bw] = np.clip(sub * (1 - g) + np.array(AMBER) * g, 0, 255).astype(np.uint8)
+        if self.eye_px is not None and motion is not None:
+            for (x, y, w, h), (m, px, py) in zip(self.EYES, self.eye_px):
+                d = np.clip(motion[m] / vision.CAP, 0, 1)
+                on = d > 0.02
+                for dx in (0, 1):
+                    for dy in (0, 1):
+                        img[y + py[on] + dy, x + px[on] + dx] = (np.array(GREEN)[None] * d[on, None] +
+                                                                  np.array(DIM)[None] * (1 - d[on, None])).astype(np.uint8)
+        mx, my, mw, mh = self.METERS
+        for r, (label, key) in enumerate(self.LIST):
+            if key in self.names:
+                j = self.names.index(key)
+                meter(img, mx + 190, my + 14 + r * 25, mw - 204, 14, rates_frame[j] / self.scale[key],
+                      (RED, CYAN, GREEN, (255, 90, 210), AMBER)[r])
+        for b in range(ear.N_BANDS):                       # what the ears get, low to high
+            h = int(np.clip(env[b], 0, 1) * 110)
+            rect(img, 40 + b * 40, 556 + 125 - h, 30, h, CYAN)
+        for s, v in enumerate(loom):
+            meter(img, 420 + s * 180, 676, 160, 10, v / vision.CAP, (255, 90, 210))
+        return img
+
+
+def labels(seconds: float, title: str, rewired: bool) -> str:
+    if not FONT.exists():
+        return "null"
+    f = str(FONT).replace("\\", "/").replace(":", "\\:")
+    t = lambda s, x, y, size=16, color="0x2a2925": (  # noqa: E731
+        f"drawtext=fontfile='{f}':text='{s}':x={x}:y={y}:fontsize={size}:fontcolor={color}")
+    items = [t("FLYBRAIN", 22, 9, 22, "0xc41f29"), t("THE FLY IS WATCHING" + (" (REWIRED BRAIN)" if rewired else ""), 170, 13, 16, "0xebe5d7"),
+             t(title[:60].replace("'", "").replace(":", " "), 520, 13, 15, "0x8f897d"),
+             t("01 WHAT IT SEES AND HEARS", 24, 52, 14), t("02 ALL 166,700 NEURONS (AMBER = FIRING)", 812, 52, 14),
+             t("03 LEFT EYE T4/T5", 812, 380, 14), t("RIGHT EYE T4/T5", 1042, 380, 14),
+             t("04 RESPONSE", 812, 536, 14), t("05 EARS 80 Hz - 1.2 kHz", 24, 536, 14),
+             t("LOOMING  L", 420, 660, 13, "0xebe5d7"), t("R", 600, 660, 13, "0xebe5d7")]
+    for r, (label, _) in enumerate(Panel.LIST):
+        items.append(t(label, 824, 566 + r * 25, 14, "0xebe5d7"))
+    items.append(f"drawtext=fontfile='{f}':text='%{{pts\\:hms}}':x=1150:y=13:fontsize=16:fontcolor=0xebe5d7")
+    return ",".join(items)
+
+
+def render(src: Path, start: float, seconds: float, out: Path, panel: Panel, sim, env_frames, title, rewired, sound):
+    names, rates, rest, spikes, motion, loom = sim
+    n = len(spikes)
+    dec = subprocess.Popen(["ffmpeg", "-v", "error", "-ss", str(start), "-t", str(seconds), "-i", str(src), "-vf",
+                            f"fps={FPS},scale={VW}:{VH}:force_original_aspect_ratio=decrease,"
+                            f"pad={VW}:{VH}:(ow-iw)/2:(oh-ih)/2", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"],
+                           stdout=subprocess.PIPE)
+    cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OUT_W}x{OUT_H}",
+           "-r", str(FPS), "-i", "pipe:0"]
+    if sound:
+        cmd += ["-ss", str(start), "-t", str(seconds), "-i", str(src), "-map", "0:v", "-map", "1:a", "-c:a", "aac"]
+    cmd += ["-vf", labels(seconds, title, rewired), "-c:v", "libx264", "-crf", "20", "-pix_fmt", "yuv420p",
+            "-shortest", str(out)]
+    enc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    per = rates.reshape(-1, STEPS_PER_FRAME, rates.shape[1]).mean(1)
+    for i in range(n):
+        buf = dec.stdout.read(VW * VH * 3)
+        if len(buf) < VW * VH * 3:
+            break
+        frame = np.frombuffer(buf, np.uint8).reshape(VH, VW, 3)
+        enc.stdin.write(panel.draw(frame, i, per[i], spikes[i], motion[i], loom[i], env_frames[i]).tobytes())
+    enc.stdin.close()
+    enc.wait()
+    dec.kill()
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("source", help="YouTube (or other) link, or a video file")
+    p.add_argument("--start", type=float, default=0.0, help="start at this second")
+    p.add_argument("--seconds", type=float, default=60.0, help="how much to watch")
+    p.add_argument("--rewired", action="store_true", help="a degree-preserving scrambled brain")
+    p.add_argument("--no-sound", action="store_true", help="eyes only")
+    p.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
+    p.add_argument("--out", default=None, help="output folder (default out/watch/<name>)")
+    a = p.parse_args()
+    src = fetch(a.source, HERE / "out" / "watch" / "downloads")
+    total = duration(src)
+    seconds = max(0.5, min(a.seconds, total - a.start)) if total else a.seconds
+    name = re.sub(r"[^\w-]+", "_", src.stem)[:60] + ("_rewired" if a.rewired else "")
+    out = Path(a.out) if a.out else HERE / "out" / "watch" / name
+    out.mkdir(parents=True, exist_ok=True)
+    log(f"{src.name}: watching {seconds:.1f} s from {a.start:.1f} s")
+    frames = small_frames(src, a.start, seconds)
+    x = soundtrack(src, a.start, seconds)
+    hear = bool(not a.no_sound and np.abs(x).max() > 1e-4)
+    env = ear.envelopes(audio.level(x)) if hear else np.zeros((len(frames) * STEPS_PER_FRAME, ear.N_BANDS), np.float32)
+    need = len(frames) * STEPS_PER_FRAME
+    env = np.vstack([env, np.zeros((max(0, need - len(env)), ear.N_BANDS), np.float32)])[:need]
+    brain = listen.make_brain(1, a.device, rewired=a.rewired)
+    eyes = vision.Eyes(brain)
+    if not eyes.has_motion:
+        log("  (no columns.npz in the fly data: motion detectors off, photoreceptors and looming only)")
+    log(f"  {len(frames)} frames, sound: {'yes' if hear else 'no'}, brain on {brain.device}")
+    sim = simulate(brain, eyes, frames, env, hear)
+    names, rates, rest = sim[0], sim[1], sim[2]
+    header = "time_s," + ",".join(n.replace(",", " ") for n in names) + ",loom_L,loom_R," + \
+             ",".join(f"ear_band_{b}" for b in range(ear.N_BANDS))
+    loom_steps = np.repeat(sim[5], STEPS_PER_FRAME, 0)
+    t = np.arange(len(rates)) * brain.dt
+    np.savetxt(out / "timeline.csv", np.column_stack([t, rates, loom_steps, env]), delimiter=",", header=header,
+               comments="", fmt="%.4g")
+    mean = rates.mean(0)
+    summary = sorted(({"group": n, "rest": float(rest[j]), "watching": float(mean[j]),
+                       "ratio": float((mean[j] + 1e-3) / (rest[j] + 1e-3))} for j, n in enumerate(names)),
+                     key=lambda r: -r["ratio"])
+    (out / "summary.json").write_text(json.dumps({"source": a.source, "start": a.start, "seconds": seconds,
+                                                  "rewired": a.rewired, "sound": hear, "groups": summary}, indent=1))
+    log("  strongest responses (spikes/neuron/s while watching vs at rest):")
+    for r in summary[:8]:
+        log(f"    {r['group']:22s} {r['rest']:7.3f} -> {r['watching']:7.3f}  ({r['ratio']:.1f}x)")
+    panel = Panel(brain, eyes, names, rates)
+    env_frames = env.reshape(-1, STEPS_PER_FRAME, ear.N_BANDS).mean(1)
+    log("  drawing the video...")
+    render(src, a.start, seconds, out / "fly_watching.mp4", panel, sim, env_frames, src.stem, a.rewired,
+           sound=has_audio(src))
+    log(f"done: {out / 'fly_watching.mp4'}")
+
+
+if __name__ == "__main__":
+    main()

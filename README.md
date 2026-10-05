@@ -1,4 +1,4 @@
-# fly-ears: does a real fly brain hear the difference between human and AI music?
+# fly-ears: how a real fly brain responds to music and video
 
 Songs are played into the ears of the complete fruit fly connectome (MaleCNS: 166,700 neurons,
 25.6 M connections, simulated by `flybrain` from [fly.ai](https://github.com/alextitonis/fly.ai)),
@@ -71,6 +71,46 @@ Results: `out/<folder>/report.md` (tables, the four answers, how each neuron gro
 
 Tests (no brain, GPU or audio needed): `python -m pytest tests -q`.
 
+## Watch a video: the fly sees and hears it, frame by frame
+
+```powershell
+..irefly\.venv\Scripts\python.exe watch.py "https://www.youtube.com/watch?v=..." --seconds 60
+..irefly\.venv\Scripts\python.exe watch.py my_video.mp4 --start 30 --seconds 60
+..irefly\.venv\Scripts\python.exe watch.py my_video.mp4 --rewired      # scrambled brain, to compare
+```
+
+Links need `yt-dlp` (`pip install yt-dlp`); a downloaded file works without it. Use videos you
+have the right to download and use.
+
+Every frame (25 a second = two 20 ms brain steps) reaches the brain the way a fly would get it.
+The frame is the fly's frontal view, its left half on the left eye:
+
+| sense | neurons | from the video |
+|---|---|---|
+| light | 6,006 photoreceptors | brightness of the frame column at each one's azimuth |
+| motion | 13,581 T4/T5 cells, each in its own eye column with its own preferred direction | optical flow at the cell's spot, along its preferred direction; brightening edges mostly drive T4 (ON), darkening T5 (OFF) |
+| looming | LPLC2 (185) | edges moving outward in all four directions around a point (an approaching object), not sliding motion |
+| sound | Johnston's organ (138) | the soundtrack, as for songs |
+
+Out (`out/watch/<name>/`): **`fly_watching.mp4`**, the video beside the fly's brain live (every
+neuron that fires, both eyes' motion detectors, the ear bands, the response of each pathway),
+with the original sound; `timeline.csv` (every 20 ms: each group's spike rate, looming, ear bands);
+`summary.json` (each group while watching vs at rest). About 0.4 s of compute per video second on
+a GPU.
+
+Checked on a test video with known events (bar moving right, then left, then a disc approaching;
+beeps over the first half):
+
+| response (spikes/neuron/s) | bar moving right | bar moving left | approaching disc | still |
+|---|---|---|---|---|
+| T4/T5 (motion) | 1.65 | 1.68 | 1.11 | 0.55 |
+| LPLC2 (looming) | 2.3 | 2.3 | **14.1** | 0.6 |
+| ear JO-A/B (beeps in the first two) | 5.9 | 4.4 | 0.33 | 0.33 |
+
+Motion direction is right per eye: rightward motion drives the left eye's T4b (back-to-front) and
+the right eye's T4a (front-to-back), leftward the reverse (about 0.09 vs 0.004 V). The ear follows
+the beeps (9.1 during a beep, 3.8 between).
+
 ## Method check (synthetic songs, 12 per class, real GPU run)
 
 | feature set | **null** set: AUC (p) | **signal** set: AUC (p) |
@@ -102,6 +142,8 @@ Tests (no brain, GPU or audio needed): `python -m pytest tests -q`.
 | `flyears/features.py` | the same summary for ear input and brain output; full-band audio baseline |
 | `flyears/evaluate.py` | song-level cross-validation, permutation null, bootstrap |
 | `flyears/synth.py` | synthetic null and signal sets |
+| `flyears/vision.py` | video frames -> photoreceptors, T4/T5 motion detectors, LPLC2 looming |
+| `watch.py` | a link or video file -> the fly watches it -> video, timeline, summary |
 | `run.py` | everything, and the report |
 
 Your audio files stay on your PC: `songs/` is ignored by git, and nothing is uploaded.

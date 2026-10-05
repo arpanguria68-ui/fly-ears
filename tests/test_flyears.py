@@ -131,3 +131,83 @@ def test_injections_match_per_neuron_drive():
     for idx, amount in ear.injections(cells, bands, env):
         for c in idx:
             assert np.allclose(full[int(c)], amount)
+
+
+# ---------------------------------------------------------------- vision
+from flyears import vision  # noqa: E402
+
+
+def _texture(seed=0):
+    rng = np.random.default_rng(seed)
+    big = ndimage_zoom(rng.random((30, 54)), 6)
+    return (big[: vision.FLOW_H + 20, : vision.FLOW_W + 20] * 255).astype(np.uint8)
+
+
+def ndimage_zoom(a, k):
+    from scipy import ndimage
+    return ndimage.zoom(a, k, order=1)
+
+
+def test_flow_finds_rightward_motion():
+    tex = _texture()
+    a = tex[10:10 + vision.FLOW_H, 10:10 + vision.FLOW_W]
+    b = tex[10:10 + vision.FLOW_H, 8:8 + vision.FLOW_W]              # content moved 2 px right
+    u, v, _ = vision.flow(a, b)
+    mid = (slice(15, -15), slice(15, -15))
+    assert 1.0 < np.median(u[mid]) < 3.0 and abs(np.median(v[mid])) < 0.5
+
+
+def _fake_eye_brain():
+    types = np.array(["LPLC2"] * 4 + ["R1-6"] * 6)
+    side = np.array(["L", "L", "R", "R"] + ["L"] * 6)
+    def cells(ts, side_=None, **kw):
+        s = kw.get("side", side_)
+        m = np.isin(types, ts)
+        return np.flatnonzero(m & (side == s) if s else m)
+    return SimpleNamespace(cell_type=types, azimuth=np.linspace(-1, 1, 6), cells=cells)
+
+
+def _cols():
+    # 4 cells: left/right eye x (front-to-back preferring "backward", back-to-front preferring "forward")
+    return {"cells": np.array([100, 101, 102, 103]), "eye": np.array(["L", "L", "R", "R"]),
+            "front": np.full(4, 0.5, np.float32), "up": np.full(4, 0.5, np.float32),
+            "pref": np.array([[-1, 0], [1, 0], [-1, 0], [1, 0]], np.float32),
+            "types": np.array(["T4a", "T4b", "T4a", "T4b"])}
+
+
+def test_rightward_motion_drives_the_right_cells():
+    """Moving right: the left eye sees back-to-front (forward) motion, the right eye front-to-back."""
+    eyes = vision.Eyes(_fake_eye_brain(), _cols())
+    tex = _texture(1)
+    eyes.see(tex[10:10 + vision.FLOW_H, 10:10 + vision.FLOW_W])
+    eyes.see(tex[10:10 + vision.FLOW_H, 8:8 + vision.FLOW_W])
+    d = eyes.last["motion"]
+    assert d[1] > d[0]          # left eye: forward-preferring cell
+    assert d[2] > d[3]          # right eye: backward-preferring cell
+
+
+def test_photoreceptors_follow_brightness():
+    eyes = vision.Eyes(_fake_eye_brain(), _cols())
+    frame = np.zeros((vision.FLOW_H, vision.FLOW_W), np.uint8)
+    frame[:, : vision.FLOW_W // 2] = 255                              # bright on the left
+    p = eyes.photoreceptors(frame)
+    assert p[0] > 0.9 and p[-1] < 0.1
+
+
+def test_level_sets_match_drive():
+    drive = np.array([0.0, 0.1, 0.4, 0.8, 0.8], np.float32)
+    cells = np.arange(5)
+    got = np.zeros(5)
+    for idx, amt in vision.level_sets(cells, drive):
+        got[idx] = amt
+    assert np.max(np.abs(got - drive)) <= vision.CAP / (2 * vision.LEVELS) + 1e-6
+
+
+def test_looming_needs_expansion_not_sliding():
+    H, W = vision.FLOW_H, vision.FLOW_W
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    cx = 36                                                            # an LPLC2 receptive-field centre
+    expand_u, expand_v = (xx - cx) * 0.05, (yy - H / 2) * 0.05          # everything flows away from a point
+    slide_u, slide_v = np.full((H, W), 1.5, np.float32), np.zeros((H, W), np.float32)
+    assert vision.looming(expand_u, expand_v, "L") > 0.3
+    assert vision.looming(slide_u, slide_v, "L") == 0.0
