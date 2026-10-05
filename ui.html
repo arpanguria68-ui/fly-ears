@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FLYBRAIN · Ears &amp; Eyes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@1,125,900&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="/retro.css">
+<style>
+.wrap{max-width:1360px;margin:0 auto;padding:16px 16px 40px}
+.grid{display:grid;gap:12px;grid-template-columns:minmax(0,5fr) minmax(0,3fr);align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}}
+.stack{display:flex;flex-direction:column;gap:12px;min-width:0}
+.form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+.form input[type=text]{width:100%;font-size:13px;padding:7px 9px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:10px;font:13px var(--sans)}
+.row label{display:flex;align-items:center;gap:6px}
+.row input[type=number]{width:80px}
+.big{font-size:12px!important;padding:10px 18px 9px!important;background:linear-gradient(#e44b4b,#b8232b)!important;color:#fff!important;border-color:#7d1016!important;box-shadow:0 2px 0 #6b0f14,inset 0 1px 0 rgba(255,255,255,.3)!important}
+.msg{font:13px var(--sans);color:var(--nes);min-height:1.2em;margin-top:6px}
+.log{font:12px var(--mono);height:220px;overflow:auto;white-space:pre-wrap}
+.prog{margin-top:8px}
+.prog .bar{height:14px}
+video{display:block;width:100%;background:#000;border-radius:3px}
+table td.n{font-variant-numeric:tabular-nums}
+.lib{display:flex;flex-direction:column;gap:8px}
+.item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 10px;border-radius:3px;background:var(--case);box-shadow:inset 0 1px 0 rgba(255,255,255,.4);cursor:pointer;border:1px solid var(--case-lo)}
+.item:hover,.item.on{border-color:var(--nes)}
+.item b{font:600 13px var(--sans);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item span{font:11px var(--mono);color:var(--dim-case)}
+.links{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font:12px var(--mono)}
+pre.report{font:12px/1.45 var(--mono);white-space:pre-wrap;max-height:520px;overflow:auto;margin:0}
+.hint{font:12px var(--sans);color:var(--dim-case);margin-top:6px}
+</style></head><body>
+<header class="deck">
+  <a class="logo" href="/">FLYBRAIN<small>EARS &amp; EYES · FB-166700</small></a>
+  <nav class="keys" aria-label="sections">
+    <a class="key on" href="#watch"><i></i>WATCH</a>
+    <a class="key" href="#library"><i></i>LIBRARY</a>
+    <a class="key" href="#music"><i></i>MUSIC TEST</a>
+  </nav>
+  <div class="lamp"><span class="dot" id="lamp"></span><span id="lampt">READY</span></div>
+</header>
+<div class="ribs"></div>
+<div class="wrap">
+<div class="grid">
+ <div class="stack">
+  <section class="card" id="watch"><h2><span>Give the fly a video</span></h2>
+   <p>A YouTube (or other) link, or a video file on this PC. Every frame goes into its eyes (photoreceptors, motion detectors, looming detectors) and the soundtrack into its ears.</p>
+   <div class="form">
+    <input type="text" id="src" placeholder="https://www.youtube.com/watch?v=...   or   D:\videos\clip.mp4" aria-label="video link or file path">
+    <label class="up"><input type="file" id="file" accept="video/*" hidden><button type="button" id="pick">Pick a file</button></label>
+   </div>
+   <div class="row">
+    <label>start at <input type="text" id="start" value="0:00" style="width:80px" aria-label="start time (m:ss or seconds)"></label>
+    <label>watch for <input type="number" id="secs" value="60" min="1" max="600" aria-label="seconds to watch"> s</label>
+    <label><input type="checkbox" id="rewired"> scrambled brain (control)</label>
+    <button type="button" class="big" id="go">Watch</button>
+   </div>
+   <div class="msg" id="msg" role="status" aria-live="polite"></div>
+   <div class="hint">About 20 s of computing per minute of video on a GPU, then it plays below. Use videos you have the right to use.</div>
+  </section>
+  <section class="card" id="result" hidden><h2><span>What the fly saw and heard</span><span id="rname"></span></h2>
+   <div class="screen" style="padding:4px"><video id="player" controls playsinline></video></div>
+   <div class="links" id="rlinks"></div>
+   <div class="screen" style="margin-top:10px"><table id="rtable"><thead><tr><th>neuron group</th><th class="n">at rest</th><th class="n">watching</th><th class="n">change</th></tr></thead><tbody></tbody></table></div>
+   <p style="margin-top:8px">Spikes per neuron per second. Rest = a plain grey view in silence.</p>
+  </section>
+  <section class="card" id="music"><h2><span>Music test: human vs AI</span></h2>
+   <p>A folder with <code>human\</code> and <code>ai\</code> subfolders of songs (at least 4 each; 20+ each for real conclusions). Checks, decided in advance, whether the fly brain's response tells them apart beyond chance, beyond its own ear input and beyond a scrambled brain.</p>
+   <div class="form"><input type="text" id="folder" aria-label="songs folder"><button type="button" class="big" id="mgo">Run test</button></div>
+   <div class="row">
+    <label><input type="checkbox" id="quick"> quick look (real brain only)</label>
+    <label><input type="checkbox" id="codec" checked> same codec for all files</label>
+    <label><input type="checkbox" id="synth"> synthetic method check instead</label>
+   </div>
+   <div class="msg" id="mmsg" role="status" aria-live="polite"></div>
+   <div class="screen" id="reportbox" style="margin-top:10px" hidden><pre class="report" id="report"></pre></div>
+  </section>
+ </div>
+ <div class="stack">
+  <section class="card"><h2><span>The fly at work</span><span id="jstate">idle</span></h2>
+   <div class="screen log" id="log">Nothing running.</div>
+   <div class="prog"><div class="bar"><i id="pbar" style="background:var(--green)"></i></div></div>
+   <div class="row" style="margin-top:8px"><button type="button" id="stop" disabled>Stop</button><span class="hint" id="jtime"></span></div>
+  </section>
+  <section class="card" id="library"><h2><span>Library</span><span id="lcount"></span></h2>
+   <div class="lib" id="lib"><p>Nothing watched yet.</p></div>
+   <h2 style="margin-top:14px"><span>Music reports</span></h2>
+   <div class="lib" id="reports"></div>
+  </section>
+ </div>
+</div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+$("folder").value = "songs";
+let lastState = null, current = null;
+
+function seconds(t) {
+  t = String(t).trim();
+  if (/^\d+(\.\d+)?$/.test(t)) return +t;
+  const p = t.split(":").map(Number);
+  return p.some(isNaN) ? 0 : p.reduce((a, b) => a * 60 + b, 0);
+}
+async function post(url, body, raw) {
+  const r = await fetch(url, { method: "POST", headers: raw ? {} : { "Content-Type": "application/json" }, body: raw ? body : JSON.stringify(body) });
+  return r.json();
+}
+$("pick").onclick = () => $("file").click();
+$("file").onchange = async () => {
+  const f = $("file").files[0];
+  if (!f) return;
+  $("msg").textContent = `copying ${f.name} for the fly...`;
+  const r = await post("/upload?name=" + encodeURIComponent(f.name), f, true);
+  $("file").value = "";
+  if (!r.ok) { $("msg").textContent = r.error; return; }
+  $("src").value = r.path;
+  $("msg").textContent = `ready: ${f.name}. Press Watch.`;
+};
+$("go").onclick = async () => {
+  const r = await post("/watch", { source: $("src").value, start: seconds($("start").value), seconds: +$("secs").value, rewired: $("rewired").checked });
+  $("msg").textContent = r.ok ? "the fly is watching..." : r.error;
+};
+$("mgo").onclick = async () => {
+  const r = await post("/music", { folder: $("folder").value, quick: $("quick").checked, same_codec: $("codec").checked, synthetic: $("synth").checked });
+  $("mmsg").textContent = r.ok ? "listening... (a few minutes)" : r.error;
+};
+$("stop").onclick = () => post("/stop", {});
+
+function show(item) {
+  current = item.name;
+  $("result").hidden = false;
+  $("rname").textContent = item.name;
+  const base = "/media/" + encodeURIComponent(item.name) + "/";
+  if (!$("player").src.endsWith(base + "fly_watching.mp4")) $("player").src = base + "fly_watching.mp4";
+  $("rlinks").innerHTML = `<a href="${base}fly_watching.mp4" download>video</a><a href="${base}timeline.csv" download>timeline.csv</a><a href="${base}summary.json" download>summary.json</a><span>${esc(item.source)}</span>`;
+  $("rtable").tBodies[0].innerHTML = (item.top || []).map((g) =>
+    `<tr><td>${esc(g.group)}</td><td class="n">${g.rest.toFixed(2)}</td><td class="n">${g.watching.toFixed(2)}</td><td class="n" style="color:${g.change > 0 ? "var(--green)" : "var(--bad)"}">${g.change > 0 ? "+" : ""}${g.change.toFixed(2)}</td></tr>`).join("");
+  document.querySelectorAll(".item[data-name]").forEach((e) => e.classList.toggle("on", e.dataset.name === item.name));
+}
+let LIB = [];
+async function refreshLibrary() {
+  LIB = await (await fetch("/library")).json();
+  $("lcount").textContent = LIB.length ? `${LIB.length} watched` : "";
+  $("lib").innerHTML = LIB.length ? LIB.map((it) =>
+    `<div class="item" data-name="${esc(it.name)}" tabindex="0" role="button"><div><b>${esc(it.name)}</b><span>${new Date(it.when * 1000).toLocaleString()} · ${Math.round(it.seconds)} s${it.rewired ? " · scrambled brain" : ""}${it.sound ? "" : " · no sound"}</span></div><span>▶</span></div>`).join("") : "<p>Nothing watched yet.</p>";
+  document.querySelectorAll(".item[data-name]").forEach((e) => {
+    const open = () => show(LIB.find((x) => x.name === e.dataset.name));
+    e.onclick = open; e.onkeydown = (ev) => { if (ev.key === "Enter") open(); };
+  });
+  const reps = await (await fetch("/reports")).json();
+  $("reports").innerHTML = reps.length ? reps.map((r) => `<div class="item" data-report="${esc(r)}" tabindex="0" role="button"><div><b>${esc(r)}</b></div><span>▤</span></div>`).join("") : "<p>No music tests yet.</p>";
+  document.querySelectorAll(".item[data-report]").forEach((e) => { e.onclick = () => showReport(e.dataset.report); });
+}
+async function showReport(name) {
+  $("reportbox").hidden = false;
+  $("report").textContent = await (await fetch("/report?name=" + encodeURIComponent(name))).text();
+  location.hash = "#music";
+}
+async function poll() {
+  try {
+    const j = await (await fetch("/job")).json();
+    const running = j.state === "running";
+    $("lamp").classList.toggle("on", running);
+    $("lampt").textContent = running ? "WORKING" : "READY";
+    $("jstate").textContent = j.kind ? `${j.kind}: ${j.state}` : "idle";
+    $("stop").disabled = !running;
+    if (j.log.length) { const atEnd = $("log").scrollTop + $("log").clientHeight >= $("log").scrollHeight - 20; $("log").textContent = j.log.join("\n"); if (atEnd) $("log").scrollTop = 1e9; }
+    $("pbar").style.width = j.state === "done" ? "100%" : j.drawing ? "92%" : `${Math.round((j.progress || 0) * 85)}%`;
+    $("jtime").textContent = j.seconds ? `${j.seconds} s` : "";
+    if (lastState === "running" && j.state !== "running") {
+      await refreshLibrary();
+      if (j.state === "done" && j.kind === "watch" && j.result) { const it = LIB.find((x) => x.name === j.result); if (it) { show(it); $("msg").textContent = "done: playing below"; } }
+      if (j.state === "done" && j.kind === "music" && j.result) { showReport(j.result); $("mmsg").textContent = "done"; }
+      if (j.state === "error") { $("msg").textContent = $("mmsg").textContent = "it stopped with an error: see the log on the right"; }
+    }
+    lastState = j.state;
+  } catch { $("lampt").textContent = "NO SERVER"; }
+}
+refreshLibrary().then(() => { if (LIB.length) show(LIB[0]); });
+setInterval(poll, 1000); poll();
+</script>
+</body></html>

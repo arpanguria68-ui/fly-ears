@@ -71,6 +71,17 @@ Results: `out/<folder>/report.md` (tables, the four answers, how each neuron gro
 
 Tests (no brain, GPU or audio needed): `python -m pytest tests -q`.
 
+## In the browser
+
+```powershell
+..irefly\.venv\Scripts\python.exe ui.py          # opens http://127.0.0.1:8790/
+```
+
+Paste a link or pick a video file, choose where to start and how long, press **Watch**: the log
+shows the fly at work, then the result plays on the page with the biggest responses. The
+**Library** keeps everything watched; **Music test** runs the human-vs-AI test on a folder and
+shows its report. One job at a time (the brain uses the GPU).
+
 ## Watch a video: the fly sees and hears it, frame by frame
 
 ```powershell
@@ -144,6 +155,7 @@ the beeps (9.1 during a beep, 3.8 between).
 | `flyears/synth.py` | synthetic null and signal sets |
 | `flyears/vision.py` | video frames -> photoreceptors, T4/T5 motion detectors, LPLC2 looming |
 | `watch.py` | a link or video file -> the fly watches it -> video, timeline, summary |
+| `ui.py`, `ui.html`, `retro.css` | the browser page (port 8790) |
 | `run.py` | everything, and the report |
 
 Your audio files stay on your PC: `songs/` is ignored by git, and nothing is uploaded.
