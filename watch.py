@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from flyears import audio, ear, listen, vision
+from flyears import audio, body, ear, listen, vision
 
 HERE = Path(__file__).resolve().parent
 FPS = 25
@@ -99,6 +99,7 @@ def recorded_groups(brain, eyes) -> dict[str, np.ndarray]:
          "LPLC2 (looming)": np.concatenate(list(eyes.lplc2.values())),
          "photoreceptors": np.asarray(brain.visual)}
     g.update(listen.groups(brain))
+    g.update(body.groups(brain))                           # body parts, behaviour commands, states
     return {k: v for k, v in g.items() if len(v)}
 
 
@@ -304,6 +305,35 @@ def render(src: Path, start: float, seconds: float, out: Path, panel: Panel, sim
     dec.kill()
 
 
+MAX_SPIKES = 3000                         # spikes kept per frame for the browser's brain map
+
+
+def save_view(out: Path, brain, sim, src: Path, start: float, seconds: float, source: str, rewired: bool, hear: bool):
+    """Data for the browser viewer: per-frame rates of every group, sampled spikes, a clean clip."""
+    names, rates, rest, spikes, _, loom = sim
+    per = rates.reshape(-1, STEPS_PER_FRAME, rates.shape[1]).mean(1)
+    rng = np.random.default_rng(0)
+    kept = [s if len(s) <= MAX_SPIKES else np.sort(rng.choice(s, MAX_SPIKES, replace=False)) for s in spikes]
+    offsets = np.cumsum([0] + [len(s) for s in kept]).astype(np.uint32)
+    (out / "spikes.bin").write_bytes(offsets.tobytes() + np.concatenate(kept).astype(np.uint32).tobytes())
+    pos_file = out.parent / "positions.bin"
+    if not pos_file.exists():
+        pos = np.asarray(brain.positions, np.float64)[:, :2]
+        known = np.all(np.isfinite(pos), 1)
+        lo, hi = pos[known].min(0), pos[known].max(0)
+        xy = np.where(known[:, None], (pos - lo) / (hi - lo).max() * 1000, -1)
+        pos_file.write_bytes(xy.astype(np.int16).tobytes())
+    state_rows = [n for n in body.STATES if n in names]
+    view = {"source": source, "start": start, "seconds": seconds, "rewired": rewired, "sound": hear, "fps": FPS,
+            "frames": len(per), "names": names, "rest": [round(float(x), 4) for x in rest],
+            "rates": [[round(float(x), 3) for x in row] for row in per], "loom": np.round(loom, 3).tolist(),
+            "states": state_rows, "state_source": body.STATE_SOURCE, "neurons": int(brain.n)}
+    (out / "view.json").write_text(json.dumps(view), encoding="utf-8")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(start), "-t", str(seconds), "-i", str(src), "-vf",
+                    "scale=854:-2", "-c:v", "libx264", "-crf", "23", "-preset", "veryfast", "-c:a", "aac",
+                    str(out / "clip.mp4")], check=True)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("source", help="YouTube (or other) link, or a video file")
@@ -349,6 +379,7 @@ def main() -> None:
     log("  biggest changes (spikes per neuron per second, at rest -> while watching):")
     for r in summary[:8]:
         log(f"    {r['group']:22s} {r['rest']:7.3f} -> {r['watching']:7.3f}  ({r['change']:+.3f})")
+    save_view(out, brain, sim, src, a.start, seconds, a.source, a.rewired, hear)
     panel = Panel(brain, eyes, names, rates)
     env_frames = env.reshape(-1, STEPS_PER_FRAME, ear.N_BANDS).mean(1)
     log("  drawing the video...")

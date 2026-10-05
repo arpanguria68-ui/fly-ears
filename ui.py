@@ -96,7 +96,7 @@ def library() -> list[dict]:
         mp4, summ = d / "fly_watching.mp4", d / "summary.json"
         if mp4.exists() and summ.exists():
             s = json.loads(summ.read_text(encoding="utf-8"))
-            out.append({"name": d.name, "source": s.get("source"), "start": s.get("start"), "seconds": s.get("seconds"),
+            out.append({"name": d.name, "view": (d / "view.json").exists(), "source": s.get("source"), "start": s.get("start"), "seconds": s.get("seconds"),
                         "rewired": s.get("rewired"), "sound": s.get("sound"), "when": mp4.stat().st_mtime,
                         "top": s.get("groups", [])[:6]})
     return sorted(out, key=lambda r: -r["when"])
@@ -161,6 +161,8 @@ class Handler(BaseHTTPRequestHandler):
         path = unquote(url.path)
         if path == "/":
             return self._send((HERE / "ui.html").read_bytes(), "text/html; charset=utf-8")
+        if path == "/view":
+            return self._send((HERE / "view.html").read_bytes(), "text/html; charset=utf-8")
         if path == "/retro.css":
             return self._send((HERE / "retro.css").read_bytes(), "text/css; charset=utf-8")
         if path == "/job":

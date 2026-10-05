@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FLYBRAIN · Brain &amp; Body</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@1,125,900&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="/retro.css">
+<style>
+.wrap{max-width:1500px;margin:0 auto;padding:14px 16px 40px}
+.grid{display:grid;gap:12px;grid-template-columns:minmax(0,6fr) minmax(0,5fr);align-items:start}
+@media (max-width:1000px){.grid{grid-template-columns:minmax(0,1fr)}}
+.stack{display:flex;flex-direction:column;gap:12px;min-width:0}
+.two{display:grid;gap:12px;grid-template-columns:1fr 1fr}
+@media (max-width:640px){.two{grid-template-columns:1fr}}
+video{display:block;width:100%;background:#000;border-radius:3px}
+canvas{display:block;width:100%;height:auto}
+.now{display:flex;align-items:baseline;gap:12px;margin:2px 0 8px}
+.now b{font:italic 900 28px/1 "Archivo",var(--sans);font-stretch:125%;color:var(--nes)}
+.now span{font:12px var(--sans);color:var(--dim-case)}
+.st{display:grid;grid-template-columns:7.2em minmax(0,1fr) 4.6em;gap:8px;align-items:center;padding:3px 0}
+.st .lab b{display:block;font:600 13px var(--sans);color:var(--text)}
+.st .lab small{display:block;font:10px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st .v{font:12px var(--mono);text-align:right;color:var(--text);font-variant-numeric:tabular-nums}
+.cbar{position:relative;height:12px;background:#0d0e10;border:1px solid #000;border-radius:2px;overflow:hidden}
+.cbar::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:#3a3b40}
+.cbar i{position:absolute;top:0;bottom:0;-webkit-mask:repeating-linear-gradient(90deg,#000 0 5px,transparent 5px 7px);mask:repeating-linear-gradient(90deg,#000 0 5px,transparent 5px 7px)}
+.chips{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.chip{font:11px var(--mono);color:var(--muted)}
+.chip .bar{margin-top:3px}
+.moments{display:flex;flex-wrap:wrap;gap:6px}
+.moments button{text-transform:none!important;font:12px var(--mono)!important;letter-spacing:0!important}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font:11px var(--mono);color:var(--dim-case);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:3px;margin-right:5px;vertical-align:middle}
+.note{font:12px var(--sans);color:var(--dim-case);margin-top:6px}
+</style></head><body>
+<header class="deck">
+  <a class="logo" href="/">FLYBRAIN<small>EARS &amp; EYES · FB-166700</small></a>
+  <nav class="keys" aria-label="pages">
+    <a class="key" href="/"><i></i>WATCH</a>
+    <a class="key on" href="#" aria-current="page"><i></i>BRAIN &amp; BODY</a>
+  </nav>
+  <div class="readout"><b id="title">loading...</b><span id="meta"></span></div>
+</header>
+<div class="ribs"></div>
+<div class="wrap">
+<div class="grid">
+ <div class="stack">
+  <section class="card"><h2><span>What the fly sees and hears</span><span id="clock">0:00</span></h2>
+   <div class="screen" style="padding:4px"><video id="v" controls playsinline></video></div>
+  </section>
+  <section class="card"><h2><span>Emotions over time</span><span>click to jump</span></h2>
+   <div class="screen" style="padding:4px"><canvas id="tl" width="1200" height="300"></canvas></div>
+   <div class="legend" id="tlegend"></div>
+  </section>
+  <section class="card"><h2><span>Strongest moments</span></h2>
+   <div class="moments" id="moments"></div>
+   <p class="note">The biggest peaks of each state (at least 3 s apart, at least 0.5 spikes/neuron/s above rest). Click to watch.</p>
+  </section>
+ </div>
+ <div class="stack">
+  <div class="two">
+   <section class="card"><h2><span>Brain</span><span id="spk"></span></h2>
+    <div class="screen" style="padding:4px"><canvas id="brain" width="520" height="520"></canvas></div>
+   </section>
+   <section class="card"><h2><span>Body</span><span id="act">resting</span></h2>
+    <div class="screen" style="padding:4px"><canvas id="body" width="520" height="520"></canvas></div>
+   </section>
+  </div>
+  <section class="card"><h2><span>Emotions now</span><span>vs rest</span></h2>
+   <div class="now"><b id="mood">calm</b><span id="moodwhy"></span></div>
+   <div class="screen" id="states"></div>
+   <p class="note">Each "emotion" is the spike rate of a population that carries that internal state in real flies (named under each word), compared with the same brain at rest. A readout of this model, not a measured feeling.</p>
+  </section>
+  <section class="card"><h2><span>Senses and commands</span></h2>
+   <div class="screen chips" id="chips"></div>
+  </section>
+ </div>
+</div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const name = new URLSearchParams(location.search).get("name");
+const base = "/media/" + encodeURIComponent(name) + "/";
+const COLORS = { fear: "#ff5a5a", pleasure: "#6cf08a", distress: "#c792ff", excitement: "#ffb23e", desire: "#ff5ad2",
+                 anger: "#ff7a2f", mood: "#3ed8ff", appetite: "#ffe14d" };
+const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+let V, OFF, SPK, POS, idx = {}, last = -1, smooth = {};
+
+async function load() {
+  V = await (await fetch(base + "view.json")).json();
+  const sb = await (await fetch(base + "spikes.bin")).arrayBuffer();
+  OFF = new Uint32Array(sb, 0, V.frames + 1);
+  SPK = new Uint32Array(sb, (V.frames + 1) * 4);
+  POS = new Int16Array(await (await fetch("/media/positions.bin")).arrayBuffer());
+  V.names.forEach((n, i) => (idx[n] = i));
+  $("title").textContent = name;
+  $("meta").textContent = `${Math.round(V.seconds)} s from ${fmt(V.start)}${V.rewired ? " · scrambled brain" : ""}${V.sound ? "" : " · no sound"}`;
+  $("v").src = base + "clip.mp4";
+  prepare();
+  requestAnimationFrame(loop);
+}
+
+// ---------------------------------------------------------------- per-group scales and the states over time
+const col = (n) => (idx[n] === undefined ? null : V.rates.map((r) => r[idx[n]]));
+function q(arr, p) { const s = [...arr].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; }
+let SCALE = {}, ST = {}, brainBase;
+function prepare() {
+  for (const n of V.names) {
+    const c = col(n), rest = V.rest[idx[n]];
+    SCALE[n] = Math.max(q(c, 0.98) - rest, 1e-3);
+  }
+  for (const s of V.states) {                         // change vs rest, smoothed over 0.4 s
+    const c = col(s), rest = V.rest[idx[s]], k = 12;            // +-0.5 s
+    const raw = c.map((x) => x - rest);
+    ST[s] = raw.map((_, i) => { let a = 0, n = 0; for (let j = Math.max(0, i - k); j <= Math.min(raw.length - 1, i + k); j++) { a += raw[j]; n++; } return a / n; });
+    ST[s].peak = Math.max(...ST[s].map(Math.abs), 1e-3);
+  }
+  $("states").innerHTML = V.states.map((s) => `<div class="st"><div class="lab"><b>${s}</b><small>${esc(V.state_source[s] || "")}</small></div>
+    <div class="cbar"><i id="sb-${s}"></i></div><div class="v" id="sv-${s}">0</div></div>`).join("");
+  ACTIVE = V.states.filter((s) => ST[s].peak > 0.05);
+  const quiet = V.states.filter((s) => !ACTIVE.includes(s));
+  $("tlegend").innerHTML = ACTIVE.map((s) => `<span><i style="background:${COLORS[s]}"></i>${s}</span>`).join("") +
+    (quiet.length ? `<span>no response: ${quiet.join(", ")}</span>` : "");
+  const CH = [["ears (JO-A/B)", "ear JO-A/B", "#ff5a5a"], ["hearing relay", "WED", "#3ed8ff"], ["motion (T4/T5)", "T4/T5 (motion)", "#6cf08a"],
+              ["looming (LPLC2)", "LPLC2 (looming)", "#ff5ad2"], ["walk (DNg100)", "walk", "#ffb23e"], ["escape (DNp01)", "escape", "#ff5a5a"],
+              ["back up (MDN)", "back up", "#ffb23e"], ["groom (DNg11)", "groom", "#ffe14d"], ["song (pIP10)", "song", "#ff5ad2"]];
+  $("chips").innerHTML = CH.filter((c) => idx[c[1]] !== undefined).map(([l, n, c]) => `<div class="chip">${l}<div class="bar"><i id="ch-${CSS.escape(n)}" style="background:${c}"></i></div></div>`).join("");
+  CHIPS = CH.filter((c) => idx[c[1]] !== undefined);
+  drawTimeline();
+  moments();
+  // brain: every neuron as a faint dot
+  const c = document.createElement("canvas"); c.width = c.height = 520;
+  const g = c.getContext("2d"); g.fillStyle = "#151619"; g.fillRect(0, 0, 520, 520); g.fillStyle = "rgba(150,170,190,0.16)";
+  for (let i = 0; i < POS.length / 2; i++) { const x = POS[2 * i], y = POS[2 * i + 1]; if (x >= 0) g.fillRect(10 + x * 0.5, 10 + y * 0.5, 1.2, 1.2); }
+  brainBase = c;
+  glowC = document.createElement("canvas"); glowC.width = glowC.height = 520;
+}
+let CHIPS = [], glowC, ACTIVE = [];
+const MOMENT_MIN = 0.5;                                       // spikes per neuron per second above rest
+
+function drawTimeline(t = 0) {
+  const c = $("tl"), g = c.getContext("2d"), W = c.width, H = c.height, n = V.frames;
+  g.fillStyle = "#151619"; g.fillRect(0, 0, W, H);
+  const lanes = ACTIVE.length || 1, L = H / lanes, labelW = 92;
+  g.font = "12px IBM Plex Mono, monospace"; g.textBaseline = "middle";
+  ACTIVE.forEach((s, k) => {                          // one lane per state: above rest up, below rest down
+    const mid = k * L + L / 2, amp = L / 2 - 3, y = ST[s], col = COLORS[s];
+    g.fillStyle = "#8f897d"; g.fillText(s, 6, mid);
+    g.strokeStyle = "#2b2c30"; g.beginPath(); g.moveTo(labelW, mid); g.lineTo(W, mid); g.stroke();
+    g.beginPath(); g.moveTo(labelW, mid);
+    y.forEach((v, i) => g.lineTo(labelW + (i / (n - 1)) * (W - labelW), mid - (v / y.peak) * amp));
+    g.lineTo(W, mid); g.closePath();
+    g.globalAlpha = 0.55; g.fillStyle = col; g.fill(); g.globalAlpha = 1;
+  });
+  g.fillStyle = "#ebe5d7"; g.fillRect(labelW + (t / V.seconds) * (W - labelW) - 1, 0, 2, H);
+}
+$("tl").onclick = (e) => { const r = e.target.getBoundingClientRect(), x0 = 92 / 1200 * r.width;
+  $("v").currentTime = Math.max(0, (e.clientX - r.left - x0) / (r.width - x0)) * V.seconds; $("v").play(); };
+
+function moments() {
+  const out = [];
+  for (const s of V.states) {
+    const y = ST[s], used = [];
+    for (let k = 0; k < 2; k++) {
+      let best = -1, bi = -1;
+      y.forEach((v, i) => { if (v > best && used.every((u) => Math.abs(u - i) > 3 * V.fps)) { best = v; bi = i; } });
+      if (bi >= 0 && best > 0.35 * y.peak && best >= MOMENT_MIN) { used.push(bi); out.push({ s, t: bi / V.fps, v: best }); }
+    }
+  }
+  out.sort((a, b) => a.t - b.t);
+  $("moments").innerHTML = out.length ? out.map((m) => `<button type="button" data-t="${m.t}" style="border-left:4px solid ${COLORS[m.s]}">${fmt(m.t)} ${m.s} +${m.v.toFixed(2)}</button>`).join("") : "<p class=note>No clear peaks.</p>";
+  document.querySelectorAll("#moments button").forEach((b) => (b.onclick = () => { $("v").currentTime = +b.dataset.t; $("v").play(); }));
+}
+
+// ---------------------------------------------------------------- live drawing
+function val(n, i) { if (idx[n] === undefined) return 0; return Math.max(0, Math.min(1, (V.rates[i][idx[n]] - V.rest[idx[n]]) / SCALE[n])); }
+function sm(key, x, a = 0.3) { smooth[key] = (smooth[key] ?? x) * (1 - a) + x * a; return smooth[key]; }
+
+function drawBrain(i, jump) {
+  const g = glowC.getContext("2d");
+  if (jump) g.clearRect(0, 0, 520, 520);
+  g.globalCompositeOperation = "destination-out"; g.fillStyle = "rgba(0,0,0,0.45)"; g.fillRect(0, 0, 520, 520);
+  g.globalCompositeOperation = "source-over"; g.fillStyle = "#ffb23e";
+  for (let k = OFF[i]; k < OFF[i + 1]; k++) { const n = SPK[k], x = POS[2 * n], y = POS[2 * n + 1]; if (x >= 0) g.fillRect(9 + x * 0.5, 9 + y * 0.5, 2.2, 2.2); }
+  const b = $("brain").getContext("2d");
+  b.drawImage(brainBase, 0, 0); b.drawImage(glowC, 0, 0);
+  $("spk").textContent = `${(OFF[i + 1] - OFF[i]).toLocaleString()} spikes shown`;
+}
+
+function drawBody(i, t) {
+  const c = $("body"), g = c.getContext("2d"), W = c.width, H = c.height, cx = W / 2, cy = H / 2 + 10;
+  g.fillStyle = "#151619"; g.fillRect(0, 0, W, H);
+  const p = (n) => sm(n, val(n, i));
+  const wingL = p("wing power L"), wingR = p("wing power R"), stL = p("wing steer L"), stR = p("wing steer R");
+  const walk = p("walk"), back = p("back up"), esc_ = p("escape"), jump = p("jump"), groom = p("groom"), song = p("song");
+  const turn = p("turn L") - p("turn R"), abd = p("abdomen"), neck = (p("neck L") + p("neck R")) / 2;
+  const lerp = (a, b, k) => `rgb(${a.map((x, j) => Math.round(x + (b[j] - x) * k)).join(",")})`;
+  const DIM = [70, 72, 80];
+  // wings: folded back at rest, spread and beating with flight-muscle output
+  for (const [s, power, steer] of [[-1, wingL, stL], [1, wingR, stR]]) {
+    const spread = power * 0.9, beat = Math.sin(t * 38) * power * 0.35;
+    const ang = Math.PI / 2 + s * (0.35 + spread + beat);
+    g.save(); g.translate(cx + s * 34, cy - 18); g.rotate(-ang + Math.PI / 2);
+    g.fillStyle = `rgba(${150 + 105 * steer},${190 - 40 * steer},${220 - 150 * steer},${0.18 + 0.45 * power})`;
+    g.strokeStyle = `rgba(200,210,225,${0.35 + 0.5 * power})`; g.lineWidth = 1.5;
+    g.beginPath(); g.ellipse(0, 105, 30, 105, 0, 0, Math.PI * 2); g.fill(); g.stroke(); g.restore();
+  }
+  // legs: 3 per side, each stepping and lighting with its own motor neurons
+  const legs = [["front", -46, -0.7], ["middle", -6, 0.0], ["hind", 30, 0.6]];
+  for (const s of [-1, 1]) for (const [part, dy, sweep] of legs) {
+    const v = p(`leg ${part} ${s < 0 ? "L" : "R"}`), ph = t * 14 + (part === "middle" ? Math.PI : 0) + (s < 0 ? 0 : Math.PI);
+    const swing = Math.sin(ph) * v * 0.45;
+    const a1 = (s < 0 ? Math.PI : 0) + s * (sweep + swing) * -1;
+    const x0 = cx + s * 30, y0 = cy + dy, x1 = x0 + Math.cos(a1) * 70, y1 = y0 + Math.sin(a1) * 70 * 0.9;
+    const a2 = a1 + s * (part === "front" ? -0.9 : part === "hind" ? 0.9 : 0.4);
+    const x2 = x1 + Math.cos(a2) * 62, y2 = y1 + Math.sin(a2) * 62;
+    g.strokeStyle = lerp(DIM, [108, 240, 138], v); g.lineWidth = 3 + 3 * v; g.lineCap = "round";
+    g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+  }
+  // abdomen with stripes, thorax, head
+  g.fillStyle = lerp([95, 82, 60], [255, 178, 62], abd); g.beginPath(); g.ellipse(cx, cy + 100, 44, 82, 0, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = "rgba(20,20,22,0.55)"; g.lineWidth = 5;
+  for (let k = 0; k < 5; k++) { const y = cy + 55 + k * 22; g.beginPath(); g.moveTo(cx - 38 + Math.abs(k - 2) * 4, y); g.lineTo(cx + 38 - Math.abs(k - 2) * 4, y); g.stroke(); }
+  g.fillStyle = "#7a6a52"; g.beginPath(); g.ellipse(cx, cy - 6, 46, 52, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = lerp([90, 80, 64], [62, 216, 255], neck); g.fillRect(cx - 10, cy - 64, 20, 14);
+  g.fillStyle = "#8a7656"; g.beginPath(); g.ellipse(cx, cy - 88, 40, 30, 0, 0, Math.PI * 2); g.fill();
+  const look = p("T4/T5 (motion)");
+  for (const s of [-1, 1]) { g.fillStyle = lerp([150, 30, 35], [255, 90, 90], look); g.beginPath(); g.ellipse(cx + s * 30, cy - 90, 16, 24, s * 0.3, 0, Math.PI * 2); g.fill(); }
+  // what the command neurons say
+  const arrow = (y, dir, a, label) => { if (a < 0.05) return; g.globalAlpha = Math.min(1, a * 1.4); g.fillStyle = "#ffb23e";
+    g.beginPath(); g.moveTo(cx, y + dir * 26); g.lineTo(cx - 18, y); g.lineTo(cx + 18, y); g.fill(); g.font = "600 14px IBM Plex Mono"; g.textAlign = "center"; g.fillText(label, cx, y - dir * 10 + (dir < 0 ? 0 : 12)); g.globalAlpha = 1; };
+  arrow(cy - 150, -1, walk, "walk");
+  arrow(cy + 205, 1, back, "back up");
+  if (Math.abs(turn) > 0.06) { g.strokeStyle = "#ffb23e"; g.globalAlpha = Math.min(1, Math.abs(turn) * 2); g.lineWidth = 4;
+    g.beginPath(); g.arc(cx, cy - 20, 150, -Math.PI / 2, -Math.PI / 2 + (turn > 0 ? -0.6 : 0.6), turn > 0); g.stroke();
+    g.font = "600 14px IBM Plex Mono"; g.fillStyle = "#ffb23e"; g.textAlign = turn > 0 ? "right" : "left"; g.fillText(turn > 0 ? "turn left" : "turn right", cx + (turn > 0 ? -95 : 95), cy - 150); g.globalAlpha = 1; }
+  const e = Math.max(esc_, jump);
+  if (e > 0.15) { g.strokeStyle = `rgba(255,90,90,${Math.min(1, e)})`; g.lineWidth = 4; g.beginPath(); g.arc(cx, cy, 210 - 20 * Math.sin(t * 20), 0, Math.PI * 2); g.stroke();
+    g.font = "800 18px IBM Plex Mono"; g.fillStyle = "#ff5a5a"; g.textAlign = "center"; g.fillText("ESCAPE", cx, 28); }
+  if (song > 0.2) { g.font = "26px serif"; g.fillStyle = `rgba(255,90,210,${song})`; g.textAlign = "center"; g.fillText("♪", cx + 120, cy - 40 - 10 * Math.sin(t * 6)); }
+  if (groom > 0.2) { g.font = "600 13px IBM Plex Mono"; g.fillStyle = `rgba(255,225,77,${groom})`; g.textAlign = "center"; g.fillText("grooming", cx, cy - 130); }
+  const acts = [["walking", walk], ["backing up", back], ["escaping", e], ["flying", (wingL + wingR) / 2], ["grooming", groom], ["singing", song]].filter((a) => a[1] > 0.25).sort((a, b) => b[1] - a[1]);
+  $("act").textContent = acts.length ? acts.slice(0, 2).map((a) => a[0]).join(" · ") : "resting";
+}
+
+function drawStates(i) {
+  let top = null;
+  for (const s of V.states) {
+    const raw = V.rates[i][idx[s]] - V.rest[idx[s]], x = sm("st-" + s, raw, 0.25), k = Math.max(-1, Math.min(1, x / ST[s].peak));
+    const b = $("sb-" + s);
+    b.style.background = COLORS[s];
+    b.style.left = k >= 0 ? "50%" : `${50 + k * 50}%`; b.style.width = `${Math.abs(k) * 50}%`;
+    $("sv-" + s).textContent = (x >= 0 ? "+" : "") + x.toFixed(2);
+    if (k > 0.35 && (!top || k > top.k)) top = { s, k };
+  }
+  $("mood").textContent = top ? top.s : "calm";
+  $("mood").style.color = top ? COLORS[top.s] : "var(--ink-case)";
+  $("moodwhy").textContent = top ? `${V.state_source[top.s]} well above rest` : "no state far from rest";
+}
+
+function loop(now) {
+  const v = $("v"), t = v.currentTime || 0;
+  const i = Math.min(V.frames - 1, Math.floor(t * V.fps));
+  if (i !== last) {
+    drawBrain(i, Math.abs(i - last) > 2);
+    drawStates(i);
+    for (const [, n] of CHIPS) $("ch-" + CSS.escape(n)).style.width = `${val(n, i) * 100}%`;
+    drawTimeline(t);
+    $("clock").textContent = fmt(V.start + t);
+    last = i;
+  }
+  drawBody(i, now / 1000);
+  requestAnimationFrame(loop);
+}
+load().catch((e) => { $("title").textContent = "could not load this video's data: watch it again to make it"; console.error(e); });
+</script>
+</body></html>

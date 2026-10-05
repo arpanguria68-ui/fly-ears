@@ -82,6 +82,29 @@ shows the fly at work, then the result plays on the page with the biggest respon
 **Library** keeps everything watched; **Music test** runs the human-vs-AI test on a folder and
 shows its report. One job at a time (the brain uses the GPU).
 
+## Brain, body and emotions (the viewer)
+
+Every watched video gets a viewer (**Brain, body & emotions** on the result, or
+`/view?name=<video>`), synced to the clip:
+
+* **Brain**: every neuron that fires, live.
+* **Body**: a fly driven by its real motor neurons. The connectome includes the nerve cord, so
+  the wings follow the flight power motor neurons (DLM, DVM) and steering ones (b1-3, hg1-4...),
+  each of the 6 legs its own leg motor neurons (front/middle/hind told apart by their position
+  along the nerve cord, side by side), plus neck and abdomen. Command neurons overlay what the fly
+  "decides": walk (DNg100), turn (DNa02 left vs right), escape (DNp01, the giant fiber), back up
+  (MDN), groom (DNg11), sing (pIP10).
+* **Emotions**: populations that carry internal states in real flies, against the same brain at
+  rest: fear (giant-fiber escape circuit), pleasure (PAM dopamine), distress (PPL1 dopamine),
+  excitement (octopamine), desire (pC1), anger (aIPg), mood (serotonin), appetite (NPF). A readout
+  of this model, not a measured feeling.
+* **Emotions over time** (click to jump) and **strongest moments** (each state's biggest peaks).
+
+On the test video the escape neuron (DNp01) fired 6.9 spikes/s while the disc approached, 0.8
+for the sliding bar and 0 when still: looming drives the giant fiber, the fly's real escape
+circuit, from the wiring alone. The jump motor neuron (TTMn) did not follow, and the reward and
+punishment dopamine neurons (PAM, PPL1) stay silent in this model.
+
 ## Watch a video: the fly sees and hears it, frame by frame
 
 ```powershell
@@ -155,7 +178,8 @@ the beeps (9.1 during a beep, 3.8 between).
 | `flyears/synth.py` | synthetic null and signal sets |
 | `flyears/vision.py` | video frames -> photoreceptors, T4/T5 motion detectors, LPLC2 looming |
 | `watch.py` | a link or video file -> the fly watches it -> video, timeline, summary |
-| `ui.py`, `ui.html`, `retro.css` | the browser page (port 8790) |
+| `flyears/body.py` | body parts, behaviour commands and internal states, from real neurons |
+| `ui.py`, `ui.html`, `view.html`, `retro.css` | the browser pages (port 8790) |
 | `run.py` | everything, and the report |
 
 Your audio files stay on your PC: `songs/` is ignored by git, and nothing is uploaded.

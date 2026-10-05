@@ -133,7 +133,7 @@ function show(item) {
   $("rname").textContent = item.name;
   const base = "/media/" + encodeURIComponent(item.name) + "/";
   if (!$("player").src.endsWith(base + "fly_watching.mp4")) $("player").src = base + "fly_watching.mp4";
-  $("rlinks").innerHTML = `<a href="${base}fly_watching.mp4" download>video</a><a href="${base}timeline.csv" download>timeline.csv</a><a href="${base}summary.json" download>summary.json</a><span>${esc(item.source)}</span>`;
+  $("rlinks").innerHTML = (item.view ? `<a href="/view?name=${encodeURIComponent(item.name)}"><b>Brain, body &amp; emotions ▸</b></a>` : `<span>watch it again for the brain, body &amp; emotions view</span>`) + `<a href="${base}fly_watching.mp4" download>video</a><a href="${base}timeline.csv" download>timeline.csv</a><a href="${base}summary.json" download>summary.json</a><span>${esc(item.source)}</span>`;
   $("rtable").tBodies[0].innerHTML = (item.top || []).map((g) =>
     `<tr><td>${esc(g.group)}</td><td class="n">${g.rest.toFixed(2)}</td><td class="n">${g.watching.toFixed(2)}</td><td class="n" style="color:${g.change > 0 ? "var(--green)" : "var(--bad)"}">${g.change > 0 ? "+" : ""}${g.change.toFixed(2)}</td></tr>`).join("");
   document.querySelectorAll(".item[data-name]").forEach((e) => e.classList.toggle("on", e.dataset.name === item.name));

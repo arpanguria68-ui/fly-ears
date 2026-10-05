@@ -211,3 +211,24 @@ def test_looming_needs_expansion_not_sliding():
     slide_u, slide_v = np.full((H, W), 1.5, np.float32), np.zeros((H, W), np.float32)
     assert vision.looming(expand_u, expand_v, "L") > 0.3
     assert vision.looming(slide_u, slide_v, "L") == 0.0
+
+
+# ---------------------------------------------------------------- body and states
+from flyears import body  # noqa: E402
+
+
+def test_legs_split_front_middle_hind_by_position():
+    types, pos, side, sc = [], [], [], []
+    for k, z in enumerate((100.0, 200.0, 300.0)):        # three segments along the nerve cord
+        for s in "LR":
+            for j in range(4):
+                types.append("Ti flexor MN"); pos.append((0.0, 0.0, z + j)); side.append(s); sc.append("vnc_motor")
+    types += ["CB0001"] * 3; pos += [(0.0, 0.0, 0.0)] * 3; side += ["L"] * 3; sc += ["cb_intrinsic"] * 3   # brain near z=0
+    types += ["PAM01", "PPL101", "DNp01"]; pos += [(0.0, 0.0, 0.0)] * 3; side += ["L"] * 3; sc += ["cb_intrinsic"] * 3
+    ct, side_ = np.array(types), np.array(side)
+    fake = SimpleNamespace(cell_type=ct, side=side_, superclass=np.array(sc), positions=np.array(pos),
+                           cells=lambda ts, side=None: np.flatnonzero(np.isin(ct, ts) & ((side_ == side) if side else True)))
+    g = body.groups(fake)
+    assert len(g["leg front L"]) == 4 and len(g["leg hind R"]) == 4
+    assert np.all(fake.positions[g["leg front L"], 2] < 150)          # nearest the brain = front
+    assert "pleasure" in g and "distress" in g and "fear" in g
