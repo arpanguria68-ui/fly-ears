@@ -157,25 +157,27 @@ motion or looming.
 
 To make that work like a real fly, `flyears/hybrid.py` simulates the optic lobe the way it works in a
 fly: **graded** neurons (photoreceptors, lamina, medulla, lobula, T4/T5 signal with smooth voltage around
-a resting level, so inhibition can lower their output) with **type-specific speeds** from published
+a resting level, so inhibition can lower their output), photoreceptors that **adapt** to the recent light
+(each signals contrast against its own ~1 s average, as real ones do) with **type-specific speeds** from published
 measurements (Mi1, Tm3, Tm1, Tm2, Tm4 and the lamina fast, ~10 ms; Mi4, Mi9, Tm9 slow, ~50 ms; Behnia et
 al. 2014, Arenz et al. 2017), and keeps the central brain, descending and motor neurons **spiking**
 (fly.ai's model, at 5 ms steps). Resting levels are set label-free (every graded cell rests at the same
 level under a plain grey view); a graded cell passes its change from its own rest on to spiking
-partners. With fly.ai's all-spiking model the signal stopped at the photoreceptors' first synapse: their
+partners. In rates, rasters and maps a graded cell counts while it is depolarised above its own rest, so they
+show responses, not the resting level. With fly.ai's all-spiking model the signal stopped at the photoreceptors' first synapse: their
 synapses onto the lamina are inhibitory, and spiking cells resting below threshold cannot carry that.
 
 Checked like a real fly (`physio.py`, gratings and edges into the photoreceptors only):
 
 * every stage has the real fly's sign for a light step: photoreceptors up; L1, L2, L3 down; the ON
   cells Mi1, Tm3, Mi4 up; the OFF cells Mi9, Tm1, Tm2, Tm4, Tm9 down;
-* **T4 prefers bright edges and T5 dark edges** (T4 +0.025 vs -0.025; T5 -0.027 vs +0.031);
+* **T4 prefers bright edges and T5 dark edges** (T4 +0.034 vs -0.036; T5 -0.034 vs +0.041);
 * **direction selectivity emerges from the wiring**: all 16 T4/T5 subtype x eye groups prefer the
   real fly's direction over the opposite one (a front-to-back, b back-to-front, c up, d down), and 12
-  of 16 respond most to it; but weakly (mean index +0.03, a real fly's is about 0.3-0.8);
+  of 16 respond most to it; but weakly (mean index +0.02, a real fly's is about 0.3-0.8);
 * on the test video, over 5 noise seeds, **LPLC2 and the escape neuron (giant fiber) respond more to
-  the approaching disc than to the sliding bar in 5 of 5** (LPLC2 2.50 vs 1.34, rest 0.80; giant fiber
-  2.00 vs 0.71, rest 0.40 spikes/s), and the giant fiber is silent when nothing moves.
+  the approaching disc than to the sliding bar in 5 of 5** (LPLC2 2.77 vs 1.48, rest 0.69; giant fiber
+  2.22 vs 1.00, rest 0.25 spikes/s).
 
 How the one free number was set, honestly: the strength of graded -> spiking transmission
 (`calibrate_gs.py`). The rule written first (lobula visual projection neurons at 5-15 spikes/s during

@@ -11,7 +11,7 @@
 .stack{display:flex;flex-direction:column;gap:12px;min-width:0}
 .two{display:grid;gap:12px;grid-template-columns:1fr 1fr}
 @media (max-width:640px){.two{grid-template-columns:1fr}}
-video{display:block;width:100%;background:#000;border-radius:3px}
+video{display:block;width:100%;max-height:62vh;object-fit:contain;background:#000;border-radius:3px}
 canvas{display:block;width:100%;height:auto}
 .now{display:flex;align-items:baseline;gap:12px;margin:2px 0 8px}
 .now b{font:italic 900 28px/1 "Archivo",var(--sans);font-stretch:125%;color:var(--nes)}
@@ -72,7 +72,8 @@ canvas{display:block;width:100%;height:auto}
 <div class="grid">
  <div class="stack">
   <section class="card"><h2><span>What the fly sees and hears</span><span id="clock">0:00</span></h2>
-   <div class="screen" style="padding:4px"><video id="v" controls playsinline></video></div>
+   <p class="note" id="playhint" style="margin:0 0 6px">Press play: every panel below follows the video, frame by frame.</p>
+   <div class="screen" style="padding:4px"><video id="v" controls playsinline preload="auto"></video></div>
   </section>
   <section class="card"><h2><span>Emotions over time</span><span>click to jump</span></h2>
    <div class="screen" style="padding:4px"><canvas id="tl" width="1200" height="300"></canvas></div>
@@ -90,7 +91,7 @@ canvas{display:block;width:100%;height:auto}
    </section>
    <section class="card"><h2><span>Body</span><span id="act">resting</span></h2>
     <div class="screen" style="padding:4px;position:relative">
-     <video id="body3d" muted playsinline style="display:none;width:100%;aspect-ratio:4/3;background:#000;border-radius:3px"></video>
+     <video id="body3d" muted playsinline preload="auto" style="display:none;width:100%;aspect-ratio:4/3;background:#000;border-radius:3px"></video>
      <canvas id="body" width="520" height="520"></canvas>
     </div>
     <div class="row" style="margin-top:6px;gap:6px"><button type="button" id="b3d" hidden>3D body</button><button type="button" id="b2d" hidden>2D diagram</button>
@@ -197,6 +198,8 @@ async function load() {
   $("title").textContent = name;
   $("meta").textContent = `${Math.round(V.seconds)} s from ${fmt(V.start)} · ${V.vision === "fly-own" ? "fly-own vision" : "ASSISTED vision (detectors of this program)"}${V.rewired ? " · scrambled brain" : ""}${V.sound ? "" : " · no sound"}`;
   $("v").src = base + "clip.mp4";
+  $("v").addEventListener("loadeddata", () => { last = -1; drawRetina(); }, { once: true });   // first frame at once
+  $("v").addEventListener("play", () => { $("playhint").style.display = "none"; }, { once: true });
   fetch(base + "body3d.mp4", { method: "HEAD" }).then((r) => { if (r.ok) setupBody3d(); }).catch(() => {});
   const own = V.vision === "fly-own";
   $("visionmode").textContent = own ? "(fly-own vision)" : "(ASSISTED vision)";
@@ -527,6 +530,7 @@ let BODY3D = false;
 function setupBody3d() {
   const b = $("body3d");
   b.src = base + "body3d.mp4";
+  b.addEventListener("loadeddata", () => { b.currentTime = $("v").currentTime || 0; }, { once: true });
   const show = (three) => { BODY3D = three; b.style.display = three ? "block" : "none"; $("body").style.display = three ? "none" : "block";
     $("b3d").disabled = three; $("b2d").disabled = !three;
     $("bodynote").textContent = three ? "NeuroMechFly (EPFL): a real fly's anatomy, posed by its motor neurons" : "diagram with behaviour arrows"; };

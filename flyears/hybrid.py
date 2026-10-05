@@ -20,8 +20,13 @@ Speeds (time constants), approximations of published measurements (Behnia et al.
 Arenz et al. 2017 Curr Biol 27:929): photoreceptors 5 ms; L1-L5 and the fast medulla inputs Mi1, Tm3,
 Tm1, Tm2, Tm4 10 ms; the slow ones Mi4, Mi9, Tm9 50 ms; every other graded neuron (incl. T4/T5) 20 ms.
 
-Readout: graded activity is turned into events at its equivalent rate (output 1 = 50 per second) by a
-deterministic counter, so rates, rasters and brain maps read both kinds of neuron the same way.
+Photoreceptors adapt, as real ones do: each signals its light relative to its own recent mean (time
+constant ADAPT_TAU), around the resting level, so the optic lobe responds to contrast and change, not to
+how bright a scene is overall.
+
+Readout: a graded cell is turned into events while it is depolarised above its own resting output (0.1
+above rest = 5 per second), by a deterministic counter, so rates, rasters and maps show responses, not
+the steady resting level (hyperpolarisation, e.g. the lamina's answer to light, is not shown as events).
 The dynamics never see these events.
 """
 from __future__ import annotations
@@ -34,6 +39,8 @@ SUB = 4                     # 5 ms sub-steps per 20 ms step
 REST = 0.3                  # graded resting output under a grey view
 K = 2.0                     # graded input gain: a full swing of input moves the output across its range
 FULL_RATE = 50.0            # spikes/s that a graded output of 1 stands for
+ADAPT_TAU = 1.0             # s: photoreceptors adapt to the recent mean light (real ones signal contrast)
+ADAPT_GAIN = 1.0            # contrast -> output around the resting level (0.5 at the adapted mean)
 RATE_TAU = 0.020            # s: how a graded neuron reads a spiking partner (its spikes, low-passed)
 GS = 4.0                    # graded -> spiking strength (calibrate_gs.py; chosen so the giant fiber is ~silent at rest)
 TAU = {"photo": 0.005, "fast": 0.010, "slow": 0.050, "other": 0.020}
@@ -90,6 +97,7 @@ class HybridBrain:
         self.rate = xp.zeros(self.n, xp.float32)                            # spiking partners' low-passed rate
         self.out = xp.where(self._g, xp.float32(REST), xp.float32(0))
         self.acc = xp.zeros(self.n, xp.float32)                             # readout counters
+        self._adapt = None                                                  # photoreceptors' adapted light level
 
     def _matvec(self, x):
         return self._W @ x
@@ -100,8 +108,12 @@ class HybridBrain:
         xp, b = self.xp, self._b
         g = self._g
         photo_target = None
-        if eye_drive is not None:
-            photo_target = xp.asarray(eye_drive, dtype=xp.float32)
+        if eye_drive is not None:                                          # light -> contrast against the
+            light = xp.asarray(eye_drive, dtype=xp.float32)               # photoreceptor's adapted level
+            if self._adapt is None:
+                self._adapt = light.copy()
+            self._adapt += (light - self._adapt) * xp.float32(1 - np.exp(-0.020 / ADAPT_TAU))
+            photo_target = xp.clip(0.5 + ADAPT_GAIN * (light - self._adapt), 0, 1)
         events = []
         for _ in range(SUB):
             spikes = xp.zeros(self.n, xp.float32)
@@ -125,7 +137,8 @@ class HybridBrain:
             fired = xp.flatnonzero((~g) & (v >= 1.0))
             v[fired] = 0.0
             b.fired = fired
-            self.acc += xp.where(g, self.out * xp.float32(FULL_RATE * 0.020 / SUB), 0)
+            # readout only: a graded cell counts while it is depolarised above its own rest (0.1 above = 5/s)
+            self.acc += xp.where(g, xp.maximum(self.out - self._rest_out, 0) * xp.float32(FULL_RATE * 0.020 / SUB), 0)
             gev = xp.flatnonzero(self.acc >= 1.0)
             self.acc[gev] -= 1.0
             events.append(fired)
@@ -153,4 +166,14 @@ class HybridBrain:
             self.step(eye_drive)                                            # partner receives
             acc += self.out
         self._rest_out = xp.where(self._g, acc / steps, xp.float32(0))
+        self.calibrated = True
+
+    def save_calibration(self, path) -> None:
+        """Each graded neuron's bias and resting output, so a run can be reproduced exactly."""
+        get = (lambda a: a) if self.xp is np else (lambda a: a.get())
+        np.savez_compressed(path, bias=get(self._bias), rest_out=get(self._rest_out))
+
+    def load_calibration(self, path) -> None:
+        z = np.load(path)
+        self._bias, self._rest_out = self.xp.asarray(z["bias"]), self.xp.asarray(z["rest_out"])
         self.calibrated = True

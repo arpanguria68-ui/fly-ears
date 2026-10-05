@@ -159,12 +159,15 @@ def code_arrays(n: int, groups: dict[str, np.ndarray]) -> list[np.ndarray]:
     return arrays
 
 
-def make_brain(mode: str, device: str = "auto", rewired: bool = False):
+def make_brain(mode: str, device: str = "auto", rewired: bool = False, calibration: Path | None = None):
     """fly-own: the graded optic lobe + spiking brain (hybrid.py), resting levels set under a grey view;
     assisted / lamina: fly.ai's all-spiking brain."""
     if mode == "fly-own":
         from flyears.hybrid import HybridBrain
         brain = HybridBrain(device=device, rewired=rewired)
+        if calibration is not None and calibration.exists():          # reproduce a saved run exactly
+            brain.load_calibration(calibration)
+            return brain
         eyes = senses.ColumnEyes(brain, vision.FLOW_W, vision.FLOW_H)
         brain.calibrate(eyes.drive(np.full((vision.FLOW_H, vision.FLOW_W, 3), 128, np.uint8)))
         return brain
@@ -515,6 +518,8 @@ def main() -> None:
     need = len(frames) * STEPS_PER_FRAME
     env = np.vstack([env, np.zeros((max(0, need - len(env)), ear.N_BANDS), np.float32)])[:need]
     brain = make_brain(a.vision, a.device, rewired=a.rewired)
+    if hasattr(brain, "save_calibration"):                # kept with the run, so it can be reproduced
+        brain.save_calibration(out / "calibration.npz")
     eyes = vision.Eyes(brain, fps=FPS, mode=a.vision)
     if not eyes.has_motion:
         log("  (no columns.npz in the fly data: motion detectors off, photoreceptors and looming only)")
@@ -550,7 +555,7 @@ def main() -> None:
     part = out / "fly_watching.part.mp4"              # finished videos only: a stop mid-way leaves no broken file
     render(src, a.start, seconds, part, panel, sim[:6], env_frames, src.stem, a.rewired, sound=has_audio(src))
     part.replace(out / "fly_watching.mp4")
-    body_py = Path(os.environ.get("FLY_BODY_PY") or r"D:ly-body\.venv\Scripts\python.exe")
+    body_py = Path(os.environ.get("FLY_BODY_PY") or "D:/fly-body/.venv/Scripts/python.exe")
     if body_py.exists():                              # the 3D body (NeuroMechFly), in its own environment
         log("  posing the 3D body (NeuroMechFly)...")
         r = subprocess.run([str(body_py), str(HERE / "body3d.py"), str(out)], capture_output=True, text=True)

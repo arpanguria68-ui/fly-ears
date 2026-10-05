@@ -43,8 +43,11 @@ def main() -> None:
     print(f"   video: {v['frames']} frames at {v['fps']} fps = {v['frames'] / v['fps']:.2f} s; requested {v['seconds']:.2f} s;"
           f" clip file {clip:.2f} s")
     print(f"   each frame is shown to the brain for {1000 / v['fps']:.0f} ms = {round(1 / v['fps'] / dt)} brain steps")
-    a_ok = abs(sim_s - v["frames"] / v["fps"]) < 1e-6 and abs(sim_s - v["seconds"]) <= 1 / v["fps"] + 1e-6
-    print(f"   {'PASS' if a_ok else 'FAIL'}: 1 s of video = 1 s of brain time")
+    same_clock = abs(sim_s - v["frames"] / v["fps"]) < 1e-6          # every frame shown for exactly its time
+    tail = v["seconds"] - sim_s                                      # a clip that ends inside a frame loses that
+    a_ok = same_clock and -1e-6 <= tail < 2 / v["fps"]               # last part (under 2 frames)
+    print(f"   {'PASS' if a_ok else 'FAIL'}: 1 s of video = 1 s of brain time"
+          + (f" (the clip's last {tail * 1000:.0f} ms, part of a frame, was not shown)" if a_ok and tail > 1e-3 else ""))
     ok &= a_ok
 
     # B ---------------------------------------------------------------- the saved numbers come from the simulation
@@ -65,7 +68,10 @@ def main() -> None:
         env = ear.envelopes(audio.level(x)) if v["sound"] else np.zeros((n_frames * 2, ear.N_BANDS), np.float32)
         need = n_frames * watch.STEPS_PER_FRAME
         env = np.vstack([env, np.zeros((max(0, need - len(env)), ear.N_BANDS), np.float32)])[:need]
-        brain = watch.make_brain(v.get("vision", "assisted"), "auto", rewired=v["rewired"])
+        brain = watch.make_brain(v.get("vision", "assisted"), "auto", rewired=v["rewired"],
+                                 calibration=out / "calibration.npz")
+        if (out / "calibration.npz").exists():
+            print("   using the run's own stored calibration (calibration.npz)")
         mode = v.get("vision", "assisted")
         print(f"   vision mode: {mode}")
         eyes = vision.Eyes(brain, fps=v["fps"], mode=mode)
