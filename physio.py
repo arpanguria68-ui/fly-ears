@@ -21,11 +21,14 @@ W, H = 160, 90
 DIRS = {"right": (1, 0), "left": (-1, 0), "up": (0, -1), "down": (0, 1)}       # in the frame (y down)
 
 
-def grating(direction, t, period=24, speed=24.0):
+SPEED = 24.0                       # px/s (period 24 px: 1 Hz)
+
+
+def grating(direction, t, period=24, speed=None):
     """Square-wave grating, period in px, speed px/s (about 1 Hz), 0..1."""
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
     dx, dy = DIRS[direction]
-    phase = (xx * dx + yy * dy - speed * t) / period
+    phase = (xx * dx + yy * dy - (speed or SPEED) * t) / period
     return (np.floor(phase * 2) % 2).astype(np.float32) * 0.8 + 0.1
 
 
@@ -76,6 +79,8 @@ def main() -> None:
         rest = {g: float(brain.out[i].mean()) for g, i in groups.items()}
         s1 = {g: xp.zeros(len(i), xp.float32) for g, i in groups.items()}
         s2 = {g: xp.zeros(len(i), xp.float32) for g, i in groups.items()}
+        base = {g: brain.out[i].copy() for g, i in groups.items()}           # each cell's adapted level
+        rect = {g: xp.zeros(len(i), xp.float32) for g, i in groups.items()}
         n = int(seconds / 0.02)
         for s in range(n):
             brain.step(drive(make(s * 0.02)))
@@ -84,11 +89,15 @@ def main() -> None:
                     o = brain.out[i]
                     s1[g] += o
                     s2[g] += o * o
+                    rect[g] += xp.maximum(o - base[g], 0)
         m = n - 10
+        if measure == "rectified":                                           # depolarisation, as calcium imaging sees it
+            return {g: float((rect[g] / m).mean()) for g in groups}
         if measure == "mean":
             return {g: float((s1[g] / m).mean()) - rest[g] for g in groups}
         return {g: float(xp.sqrt(xp.maximum(s2[g] / m - (s1[g] / m) ** 2, 0)).mean()) for g in groups}
     resp = {d: run(lambda t, d=d: grating(d, t)) for d in DIRS}
+    rect = {d: run(lambda t, d=d: grating(d, t), measure="rectified") for d in DIRS}
     # preferred direction of each subtype in each eye, in frame terms (front of the eye = frame centre)
     pref = {("a", "L"): "left", ("b", "L"): "right", ("a", "R"): "right", ("b", "R"): "left",
             ("c", "L"): "up", ("c", "R"): "up", ("d", "L"): "down", ("d", "R"): "down"}
@@ -108,6 +117,14 @@ def main() -> None:
         rows.append(dsi)
         print(f"  {g:7s} " + " ".join(f"{r[d]:8.4f}" for d in DIRS) + f"   {p:6s} {'ok' if best == p else '--'}   {dsi:+.2f}")
     print(f"\n  best direction = the real fly's for {good} of {len(groups)} subtype x eye; mean DSI {np.mean(rows):+.2f}")
+    rd = []
+    for g in groups:                                                         # the same, on depolarisation only
+        kind_s, e = g.split()
+        p = pref[(kind_s[2], e)]
+        a, b = rect[p][g], rect[opposite[p]][g]
+        rd.append((a - b) / (a + b) if a + b > 1e-9 else 0.0)
+    print(f"  on depolarisation (as calcium imaging measures it): mean DSI {np.mean(rd):+.2f}, "
+          f"positive in {sum(x > 0 for x in rd)} of {len(rd)}")
     on = run(lambda t: edge("right", t, True), measure="mean")
     off = run(lambda t: edge("right", t, False), measure="mean")
     t4 = np.mean([on[g] for g in groups if g.startswith("T4")]), np.mean([off[g] for g in groups if g.startswith("T4")])

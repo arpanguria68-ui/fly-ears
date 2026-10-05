@@ -18,7 +18,7 @@ spiking neurons (everything else): fly.ai's leaky integrate-and-fire model, at a
 
 Speeds (time constants), approximations of published measurements (Behnia et al. 2014 Nature 512:427;
 Arenz et al. 2017 Curr Biol 27:929): photoreceptors 5 ms; L1-L5 and the fast medulla inputs Mi1, Tm3,
-Tm1, Tm2, Tm4 10 ms; the slow ones Mi4, Mi9, Tm9 50 ms; every other graded neuron (incl. T4/T5) 20 ms.
+Tm1, Tm2, Tm4 10 ms; the slow ones Mi4, Mi9, Tm9 150 ms (ds_timing.py); every other graded neuron (incl. T4/T5) 20 ms.
 
 Photoreceptors adapt, as real ones do: each signals its light relative to its own recent mean (time
 constant ADAPT_TAU), around the resting level, so the optic lobe responds to contrast and change, not to
@@ -41,11 +41,45 @@ K = 2.0                     # graded input gain: a full swing of input moves the
 FULL_RATE = 50.0            # spikes/s that a graded output of 1 stands for
 ADAPT_TAU = 1.0             # s: photoreceptors adapt to the recent mean light (real ones signal contrast)
 ADAPT_GAIN = 1.0            # contrast -> output around the resting level (0.5 at the adapted mean)
+SHUNT = 0.0                 # shunting (divisive) inhibition: inhibitory input also divides a graded
+                            # cell's response, as conductance-based synapses do (set by tune_shunt.py)
 RATE_TAU = 0.020            # s: how a graded neuron reads a spiking partner (its spikes, low-passed)
 GS = 4.0                    # graded -> spiking strength (calibrate_gs.py; chosen so the giant fiber is ~silent at rest)
-TAU = {"photo": 0.005, "fast": 0.010, "slow": 0.050, "other": 0.020}
+TAU = {"photo": 0.005, "fast": 0.010, "slow": 0.150, "other": 0.020}   # slow 150 ms: see ds_timing.py
 FAST = ("L1", "L2", "L3", "L4", "L5", "Mi1", "Tm3", "Tm1", "Tm2", "Tm4")
 SLOW = ("Mi4", "Mi9", "Tm9")
+
+
+_CSR_SRC = r'''
+extern "C" __global__ void csr_matvec(const int n, const int* indptr, const int* indices, const float* data,
+                                      const float* x, float* y) {
+    // one warp (32 threads) per row; each lane sums a fixed stride, then a fixed tree: same order every run
+    int row = (blockDim.x * blockIdx.x + threadIdx.x) >> 5;
+    int lane = threadIdx.x & 31;
+    if (row >= n) return;
+    float s = 0.0f;
+    for (int k = indptr[row] + lane; k < indptr[row + 1]; k += 32) s += data[k] * x[indices[k]];
+    for (int off = 16; off > 0; off >>= 1) s += __shfl_down_sync(0xffffffff, s, off);
+    if (lane == 0) y[row] = s;
+}'''
+
+
+class _DeterministicCSR:
+    """y = W @ x on the GPU with each row summed in its stored order: the same result every run."""
+
+    def __init__(self, xp, m):
+        self.xp, self.n = xp, m.shape[0]
+        self.indptr = xp.asarray(m.indptr.astype(np.int32))
+        self.indices = xp.asarray(m.indices.astype(np.int32))
+        self.data = xp.asarray(m.data.astype(np.float32))
+        self.kernel = xp.RawKernel(_CSR_SRC, "csr_matvec")
+
+    def __matmul__(self, x):
+        xp = self.xp
+        x = xp.ascontiguousarray(x, dtype=xp.float32)
+        y = xp.empty(self.n, xp.float32)
+        self.kernel(((self.n * 32 + 255) // 256,), (256,),(np.int32(self.n), self.indptr, self.indices, self.data, x, y))
+        return y
 
 
 class HybridBrain:
@@ -73,16 +107,25 @@ class HybridBrain:
         tau[np.asarray(b.visual)] = TAU["photo"]
         sub_dt = 0.020 / SUB
         self._g = xp.asarray(graded)
-        self._alpha = xp.asarray((sub_dt / tau).astype(np.float32))       # Euler step per sub-step
+        self._alpha = xp.asarray((sub_dt / tau).astype(np.float32))       # photoreceptor relaxation per sub-step
+        self._rate = self._alpha                                           # dt / tau, for the exact graded step
         self._photo = xp.asarray(np.asarray(b.visual))
         self._bias = xp.full(self.n, REST, xp.float32)
         self._rest_out = xp.full(self.n, REST, xp.float32)                  # each graded neuron's own resting output
         self._spike_decay = np.float32(np.exp(-sub_dt / RATE_TAU))
         if b.device == "cuda":
-            self._W = b._W
+            # Own CSR product, one thread per neuron summing its inputs in a fixed order, so a run can be
+            # repeated bit for bit (the library product sums in a varying order, and the spiking network turns
+            # that rounding into different spikes).
+            from scipy import sparse as _sp
+            Wn = _sp.csc_matrix((b.weights, b.indices, b.indptr), shape=(b.n, b.n)).tocsr()
+            Wn.sort_indices()
+            self._W = _DeterministicCSR(xp, Wn.astype(np.float32))
+            self._Winh = _DeterministicCSR(xp, abs(Wn.minimum(0)).tocsr().astype(np.float32))  # inhibitory part only
         else:
             from scipy import sparse
             self._W = sparse.csc_matrix((b.weights, b.indices, b.indptr), shape=(b.n, b.n)).tocsr()
+            self._Winh = abs(self._W.minimum(0)).tocsr().astype(np.float32)
         self.calibrated = False
         self.reset(seed)
 
@@ -130,7 +173,12 @@ class HybridBrain:
             v += xp.where(g, 0, current + b.tonic)
             v += xp.where(g, 0, (b.rng.random(self.n) < b.noise_hz * b.dt) * np.float32(b.noise_amp))
             before = self.v_g[self._photo].copy()
-            self.v_g += self._alpha * (-self.v_g + self._bias + K * graded_in)
+            # exact exponential step towards the steady state (stable for any input): with shunting
+            # (conductance) inhibition the steady state is (bias + K * input) / (1 + SHUNT * inhibition)
+            # and the cell relaxes faster by the same factor
+            leak = 1 + SHUNT * (self._Winh @ act) if SHUNT else 1
+            target = (self._bias + K * graded_in) / leak
+            self.v_g = target + (self.v_g - target) * xp.exp(-self._rate * leak)
             if photo_target is not None:                                   # photoreceptors follow the light
                 self.v_g[self._photo] = before + self._alpha[self._photo] * (photo_target - before)
             self.out = xp.where(g, xp.clip(self.v_g, 0, 1), 0)
@@ -156,11 +204,16 @@ class HybridBrain:
         xp = self.xp
         for _ in range(rounds):
             acc = xp.zeros(self.n, xp.float32)
+            acc_i = xp.zeros(self.n, xp.float32)
             for _ in range(steps):
                 self.step(eye_drive)
-                acc += self._matvec(xp.where(self._g, self.out, self.rate))
-            mean_in = acc / steps
-            self._bias = xp.where(self._g, xp.float32(REST) - K * mean_in, self._bias)
+                a = xp.where(self._g, self.out, self.rate)
+                acc += self._matvec(a)
+                if SHUNT:
+                    acc_i += self._Winh @ a
+            mean_in, mean_inh = acc / steps, acc_i / steps
+            # steady state v = (bias + K * input) / (1 + SHUNT * inhibition): solve for v = REST
+            self._bias = xp.where(self._g, xp.float32(REST) * (1 + SHUNT * mean_inh) - K * mean_in, self._bias)
         acc = xp.zeros(self.n, xp.float32)                                  # then record each one's resting output:
         for _ in range(steps):                                              # its change from this is what a spiking
             self.step(eye_drive)                                            # partner receives

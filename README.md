@@ -159,8 +159,8 @@ To make that work like a real fly, `flyears/hybrid.py` simulates the optic lobe 
 fly: **graded** neurons (photoreceptors, lamina, medulla, lobula, T4/T5 signal with smooth voltage around
 a resting level, so inhibition can lower their output), photoreceptors that **adapt** to the recent light
 (each signals contrast against its own ~1 s average, as real ones do) with **type-specific speeds** from published
-measurements (Mi1, Tm3, Tm1, Tm2, Tm4 and the lamina fast, ~10 ms; Mi4, Mi9, Tm9 slow, ~50 ms; Behnia et
-al. 2014, Arenz et al. 2017), and keeps the central brain, descending and motor neurons **spiking**
+measurements (Mi1, Tm3, Tm1, Tm2, Tm4 and the lamina fast, ~10 ms; Mi4, Mi9, Tm9 slow, 150 ms; Behnia et
+al. 2014, Arenz et al. 2017; see below for how 150 was chosen), and keeps the central brain, descending and motor neurons **spiking**
 (fly.ai's model, at 5 ms steps). Resting levels are set label-free (every graded cell rests at the same
 level under a plain grey view); a graded cell passes its change from its own rest on to spiking
 partners. In rates, rasters and maps a graded cell counts while it is depolarised above its own rest, so they
@@ -171,13 +171,28 @@ Checked like a real fly (`physio.py`, gratings and edges into the photoreceptors
 
 * every stage has the real fly's sign for a light step: photoreceptors up; L1, L2, L3 down; the ON
   cells Mi1, Tm3, Mi4 up; the OFF cells Mi9, Tm1, Tm2, Tm4, Tm9 down;
-* **T4 prefers bright edges and T5 dark edges** (T4 +0.034 vs -0.036; T5 -0.034 vs +0.041);
-* **direction selectivity emerges from the wiring**: all 16 T4/T5 subtype x eye groups prefer the
-  real fly's direction over the opposite one (a front-to-back, b back-to-front, c up, d down), and 12
-  of 16 respond most to it; but weakly (mean index +0.02, a real fly's is about 0.3-0.8);
-* on the test video, over 5 noise seeds, **LPLC2 and the escape neuron (giant fiber) respond more to
-  the approaching disc than to the sliding bar in 5 of 5** (LPLC2 2.77 vs 1.48, rest 0.69; giant fiber
-  2.22 vs 1.00, rest 0.25 spikes/s).
+* **T4 prefers bright edges and T5 dark edges** (T4 +0.032 vs -0.037; T5 -0.037 vs +0.038);
+* **direction selectivity emerges from the wiring**: 15 of 16 T4/T5 subtype x eye groups respond most
+  to the real fly's direction (a front-to-back, b back-to-front, c up, d down) at 1 Hz; **but weakly**:
+  mean index +0.04 on response amplitude, +0.06 on depolarisation only (as calcium imaging measures it,
+  positive in 11 of 16). A real fly's is about 0.3-0.8. **This is not solved** (see below);
+* on the test video, over 5 noise seeds (`looming.py`), **LPLC2 and the escape neuron (giant fiber)
+  respond more to the approaching disc than to the sliding bars in 5 of 5** (LPLC2 2.80 vs 1.57, rest
+  0.93; giant fiber 2.22 vs 1.05, rest 0.35 spikes/s).
+
+What was tried for the weak direction selectivity, with the numbers:
+
+* **timing** (`ds_timing.py`): T4/T5 compare a fast input with a delayed one, so the slow inputs' time
+  constant matters. Slow 50 ms: 12/16 best at 1 Hz (16/16 at 3 Hz), mean index +0.02. Slow 150 ms:
+  15/16 at 1 Hz, +0.04. Kept at 150 ms; measured slow medulla cells range up to a few hundred ms, but
+  this was chosen by the test, so it is a fitted number;
+* **shunting inhibition** (`tune_shunt.py`; inhibitory input also divides a cell's response, as
+  conductance synapses do): no help (strength 0: +0.02, 12/16; strength 40: -0.00, 7/16). Kept at 0;
+* the likely missing pieces, not modelled: real T4/T5 multiply/divide their inputs at the dendrite
+  (nonlinear), synapses have their own delays and signs set by receptor type (here sign comes from the
+  transmitter only), and the connectome's weights are normalised per cell, which flattens the
+  spatial offsets the detector relies on. Matching a real fly's selectivity would need those, so
+  this model's motion vision is direction-*biased*, not direction-*selective* like a fly's.
 
 How the one free number was set, honestly: the strength of graded -> spiking transmission
 (`calibrate_gs.py`). The rule written first (lobula visual projection neurons at 5-15 spikes/s during
@@ -208,9 +223,11 @@ watched video:
   sound and spikes on one clock). Videos with 50+ frames a second give the brain a new frame every
   step; slower ones hold each frame for two steps.
 * **Real data:** the first 2 s are simulated again from the same inputs and seed and must match the
-  saved timeline step for step: exactly for the all-spiking brain, and within floating-point rounding
-  (0.04%; the limit is 0.5%) for the graded brain, which sums continuous inputs on the GPU in a
-  varying order.
+  saved timeline step for step. Found on the way: the GPU library's sparse product sums in a varying
+  order, and the spiking network turned that rounding into different spikes, so 2 of 6 audits failed
+  on one try and passed on the next. The graded brain now uses its own product that sums every
+  neuron's inputs in a fixed order, so a run repeats bit for bit on the same GPU (the 0.5% limit is
+  only for another GPU or the CPU).
 * **No phantom responses:** a plain grey view in silence must leave the senses at rest.
 
 All watched videos pass all three.
@@ -234,8 +251,8 @@ populations, not feelings; populations under 10 neurons are marked noisy.
 * Video is at most 50 frames a second; a fly's eye resolves flicker far faster (~200+ Hz).
 * The early stages of seeing and hearing are our hand-written models, not the fly's own circuits
   (in this spiking model the photoreceptor signal fades at the lamina, see fly.ai's notes).
-* The brain runs faster than real time (about 0.4 s per video second on a GPU) and the result is
-  then played back in sync; it is not a live stream.
+* The brain runs just faster than real time (fly-own vision: about 0.9 s per video second on this GPU;
+  assisted: about 0.4 s) and the result is then played back in sync; it is not a live stream.
 
 ## Watch a video: the fly sees and hears it, frame by frame
 
@@ -261,7 +278,7 @@ The frame is the fly's frontal view, its left half on the left eye:
 Out (`out/watch/<name>/`): **`fly_watching.mp4`**, the video beside the fly's brain live (every
 neuron that fires, both eyes' motion detectors, the ear bands, the response of each pathway),
 with the original sound; `timeline.csv` (every 20 ms: each group's spike rate, looming, ear bands);
-`summary.json` (each group while watching vs at rest). About 0.4 s of compute per video second on
+`summary.json` (each group while watching vs at rest). About 0.9 s of compute per video second (fly-own; 0.4 s assisted) on
 a GPU.
 
 Checked on a test video with known events (bar moving right, then left, then a disc approaching;

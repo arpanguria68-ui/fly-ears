@@ -22,8 +22,8 @@ from flyears import audio, ear, listen, senses, vision
 
 CHECK_S = 2.0                        # seconds re-simulated for B and C
 TOLERANCE = 0.005                    # B: largest difference allowed, as a share of the largest value. The graded
-                                     # brain sums continuous inputs on the GPU in a varying order, so two runs agree
-                                     # to floating-point rounding (about 0.05%), not bit for bit.
+                                     # brain sums each neuron's inputs in a fixed order (hybrid.py), so a run on the
+                                     # same GPU repeats bit for bit; the tolerance covers another GPU or the CPU.
 
 
 def main() -> None:
@@ -88,7 +88,11 @@ def main() -> None:
         print(f"   largest difference: {diff.max():.4g} spikes/neuron/s ({rel:.2%} of the largest value)")
         exact = diff.max() < 1e-2                             # only the 4-digit rounding of the saved file
         close = rel < TOLERANCE                               # floating-point order on the GPU (graded brain)
-        verdict = "= the simulation, step for step" if exact else             f"= the simulation within floating-point rounding ({rel:.2%} < {TOLERANCE:.1%})" if close else             "DIFFERS from the simulation"
+        verdict = "= the simulation, step for step" if exact else \
+            f"= the simulation within floating-point rounding ({rel:.2%} < {TOLERANCE:.1%})" if close else \
+            "DIFFERS from the simulation"
+        for r, c in np.argwhere(diff > max(1e-2, TOLERANCE * np.abs(saved).max()))[:10]:   # show where
+            print(f"     step {r}: {header[1 + c]}  saved {saved[r, c]:g}  re-simulated {rates[r, c]:.4g}")
         print(f"   {'PASS' if (exact or close) and same_names else 'FAIL'}: saved timeline {verdict}")
         ok &= bool(same_names and (exact or close))
 
