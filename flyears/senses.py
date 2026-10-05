@@ -120,3 +120,33 @@ def systems(brain) -> dict[str, np.ndarray]:
     g["clock neurons"] = _types(ct, lambda t: t.startswith(("l-LNv", "s-LNv", "LNd", "DN1")))
     g["insulin cells (IPC)"] = _types(ct, lambda t: t == "IPC")
     return {k: v for k, v in g.items() if len(v)}
+
+
+class ColumnEyes:
+    """Per-photoreceptor drive from a colour frame, each photoreceptor at its own eye column (2-D):
+    R1-6 brightness, R8 green, R7 blue (for UV). Columns from lamina.build_eye_positions(); the few
+    photoreceptors without one fall back to their azimuth at mid height."""
+
+    def __init__(self, brain, width: int, height: int):
+        from .lamina import build_eye_positions
+        pos = build_eye_positions()
+        where = {int(c): k for k, c in enumerate(pos["cells"])}
+        visual = np.asarray(brain.visual)
+        ct = np.asarray(brain.cell_type).astype(str)[visual]
+        self.kind = np.where(ct == "R7", 2, np.where(ct == "R8", 1, 0))
+        k = np.array([where.get(int(c), -1) for c in visual])
+        az = np.asarray(brain.azimuth, np.float32)
+        x = 0.5 + 0.5 * az
+        y = np.full(len(visual), 0.5, np.float32)
+        ok = k >= 0
+        left = pos["eye"][k[ok]] == "L"
+        x[ok] = np.where(left, 0.5 * pos["front"][k[ok]], 1 - 0.5 * pos["front"][k[ok]])
+        y[ok] = 1 - pos["up"][k[ok]]
+        self.x = np.clip(np.round(x * (width - 1)), 0, width - 1).astype(int)
+        self.y = np.clip(np.round(y * (height - 1)), 0, height - 1).astype(int)
+        self.placed = int(ok.sum())
+
+    def drive(self, rgb: np.ndarray) -> np.ndarray:
+        px = rgb[self.y, self.x].astype(np.float32) / 255                # (n, 3)
+        table = np.stack([px.mean(1), px[:, 1], px[:, 2]], 1)
+        return table[np.arange(len(px)), self.kind].astype(np.float32)

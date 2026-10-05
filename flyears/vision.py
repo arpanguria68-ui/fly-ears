@@ -68,7 +68,7 @@ class Eyes:
         self.brain = brain
         self.mode = mode
         self.lamina = None
-        if mode == "fly-own":
+        if mode == "lamina":                              # the earlier spiking workaround (kept for comparison)
             from .lamina import LaminaDrive, build_map
             self.lamina = LaminaDrive(build_map())
         self.speed = fps / REF_FPS                     # pixels/frame -> the same speed whatever the frame rate
@@ -78,7 +78,7 @@ class Eyes:
             self.cells = cols["cells"].astype(np.int64)
             left = cols["eye"] == "L"
             front, up = cols["front"].astype(np.float32), cols["up"].astype(np.float32)
-            x = np.where(left, 0.5 - 0.5 * front, 0.5 + 0.5 * front)       # front of the eye = frame centre
+            x = np.where(left, 0.5 * front, 1 - 0.5 * front)               # front of each eye = frame centre
             y = 1 - up
             self.px = np.clip(np.round(x * (FLOW_W - 1)), 0, FLOW_W - 1).astype(int)
             self.py = np.clip(np.round(y * (FLOW_H - 1)), 0, FLOW_H - 1).astype(int)
@@ -102,7 +102,11 @@ class Eyes:
         """One video frame (FLOW_H, FLOW_W uint8): photoreceptor drive and the injections."""
         photo = self.photoreceptors(frame)
         inject = []
-        if self.lamina is not None:                       # fly-own: the lamina, then the fly's wiring
+        if self.mode == "fly-own":                        # the graded brain sees through its photoreceptors only
+            self.last = {"motion": None, "loom": (0.0, 0.0)}
+            self.prev = frame
+            return photo, []
+        if self.lamina is not None:                       # lamina workaround: darkening into L2/L3
             self.last = {"motion": None, "loom": (0.0, 0.0)}
             self.prev = frame
             return photo, self.lamina.see(frame)

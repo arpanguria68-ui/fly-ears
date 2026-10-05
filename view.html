@@ -107,11 +107,9 @@ canvas{display:block;width:100%;height:auto}
   <div><b>Measured from the simulation</b> (every number, spike, raster mark and bar): the spiking of the real
   MaleCNS wiring, 166,700 neurons, one 20 ms step at a time, in the video's own time. <code>audit.py</code> re-runs it
   and gets the same numbers step for step; a blank grey view in silence stays at rest.</div>
-  <div><b>Modelled by this program, then injected</b> <span id="visionmode"></span>: light goes into the photoreceptors
-  (brightness per eye column; R8 green, R7 blue); L2/L3 lamina cells get the darkening at their column, as real ones
-  signal it, because this spiking model cannot pass the photoreceptors' graded inhibition on; the ears get 8 frequency
-  bands, JO-B low and JO-A high (an assumption); smells and tastes go into their receptors. The connectome does the rest.
-  <span id="assistnote"></span></div>
+  <div><b>Modelled by this program, then injected</b> <span id="visionmode"></span>: the light at each photoreceptor's own
+  eye column (R8 green, R7 blue); 8 frequency bands into the ears, JO-B low and JO-A high (an assumption); smells and tastes
+  into their receptors. The connectome does the rest. <span id="assistnote"></span></div>
   <div><b>Drawn, not simulated</b>: the fly's body is a picture posed by its motor neurons (no muscles or physics,
   no wingbeat: real wings beat 200 times a second); "emotion" words name populations, not feelings.
   Scales are fixed for every video: a full bar = +10 spikes/neuron/s, an emotion bar = +-5,
@@ -195,7 +193,7 @@ async function load() {
   $("v").src = base + "clip.mp4";
   const own = V.vision === "fly-own";
   $("visionmode").textContent = own ? "(fly-own vision)" : "(ASSISTED vision)";
-  $("assistnote").textContent = own ? "Fly-own vision sees dark edges only (the ON pathway needs a resting inhibition this model lacks) and without direction selectivity (every synapse here takes the same 20 ms)."
+  $("assistnote").textContent = own ? "Fly-own vision: the optic lobe is simulated graded with each cell type's own speed, as in a real fly, the rest of the brain spiking; checked: T4 bright / T5 dark edges, direction selectivity (weak), looming drives LPLC2 and the giant fiber (physio.py)."
     : "ASSISTED: this program also computed motion (optical flow, into T4/T5 along each cell's preferred direction) and looming (a four-way expansion detector, into LPLC2). Those detections are ours, not the fly's.";
   prepare();
   requestAnimationFrame(loop);
@@ -387,7 +385,7 @@ function drawEyes(i) {
     let on = 0;
     for (let k = 0; k < n; k++) {
       if (EYES.left[k] !== left) continue;
-      const x = 8 + (left ? 1 - EYES.front[k] : EYES.front[k]) * (W - 16), y = 8 + (1 - EYES.up[k]) * (H - 16), d = row[k] / 255;
+      const x = 8 + (left ? EYES.front[k] : 1 - EYES.front[k]) * (W - 16), y = 8 + (1 - EYES.up[k]) * (H - 16), d = row[k] / 255;
       if (d > 0.02) { on++; g.fillStyle = `hsla(${EYES.hue[k]},85%,55%,${Math.min(1, 0.25 + d * 1.5)})`; g.fillRect(x - 1.5, y - 1.5, 3, 3); }
       else { g.fillStyle = "#2c2e34"; g.fillRect(x - 0.5, y - 0.5, 1, 1); }
     }

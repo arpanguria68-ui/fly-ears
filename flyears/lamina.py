@@ -86,7 +86,7 @@ class LaminaDrive:
     def __init__(self, lam: dict):
         self.cells = lam["cells"].astype(np.int64)
         left = lam["eye"] == "L"
-        x = np.where(left, 0.5 - 0.5 * lam["front"], 0.5 + 0.5 * lam["front"])     # front of the eye = frame centre
+        x = np.where(left, 0.5 * lam["front"], 1 - 0.5 * lam["front"])             # front of each eye = frame centre
         self.px = np.clip(np.round(x * (FLOW_W - 1)), 0, FLOW_W - 1).astype(int)
         self.py = np.clip(np.round((1 - lam["up"]) * (FLOW_H - 1)), 0, FLOW_H - 1).astype(int)
         self.prev = None
@@ -103,3 +103,47 @@ class LaminaDrive:
             inject = [(self.cells[q == k], k * CAP / 16) for k in np.unique(q) if k > 0]
         self.prev = cur
         return inject
+
+
+def build_eye_positions() -> dict:
+    """front/up (0..1 per eye) and eye of every photoreceptor and optic-lobe cell placed on an eye column;
+    cached as <fly data>/eyepos.npz. R7/R8 and the motion pathway come from the optic-column table and
+    the wiring (fly.ai's method); R1-6 (which the table does not list) take the column of the lamina
+    cells they synapse onto most (their own cartridge)."""
+    data = fly_data()
+    cache = data / "eyepos.npz"
+    if cache.exists():
+        z = np.load(cache)
+        return {k: z[k] for k in z.files}
+    columns = _columns_module()
+    from flybrain.build import optic_columns
+    meta = np.load(data / "brain.npz")
+    W = sparse.load_npz(data / "weights.npz").tocsr()              # rows = postsynaptic
+    ct, ids = meta["cell_type"].astype(str), meta["ids"]
+    xy, eye = columns._place(W, ct, ids, optic_columns(data / "raw" / "optic-columns.xlsx"))
+    out_w = abs(W).T.tocsr()                                        # rows = presynaptic
+    for i in np.flatnonzero(ct == "R1-6"):                          # the cartridge they feed
+        a, b = out_w.indptr[i:i + 2]
+        nb, w = out_w.indices[a:b], out_w.data[a:b]
+        k = np.isin(ct[nb], ["L1", "L2", "L3"]) & ~np.isnan(xy[nb, 0])
+        if k.any():
+            top = np.argsort(-w[k])[:3]
+            nb, w = nb[k][top], w[k][top]
+            xy[i] = (xy[nb] * w[:, None]).sum(0) / w.sum()
+            eye[i] = eye[nb[0]]
+    t4 = np.flatnonzero(np.char.startswith(ct, "T4") & (eye != ""))
+    own = dict(zip(t4, columns._offsets(W, ct, xy, t4)))
+    placed = np.flatnonzero(eye != "")
+    front_up = np.full((len(placed), 2), np.nan, np.float32)
+    for side in "LR":
+        mean = {d: np.nanmean([own[i] for i in t4 if ct[i] == f"T4{d}" and eye[i] == side], axis=0) for d in "abcd"}
+        to_fu = np.linalg.inv(np.column_stack([-(mean["a"] - mean["b"]) / 2, (mean["c"] - mean["d"]) / 2]))
+        m = eye[placed] == side
+        fu = (to_fu @ xy[placed[m]].T).T
+        ref = (to_fu @ xy[t4[eye[t4] == side]].T).T                 # scale by the T4 map so all types line up
+        lo, hi = np.nanmin(ref, 0), np.nanmax(ref, 0)
+        front_up[m] = np.clip((fu - lo) / (hi - lo), 0, 1)
+    out = {"cells": placed.astype(np.int32), "eye": eye[placed], "front": front_up[:, 0], "up": front_up[:, 1],
+           "types": ct[placed]}
+    np.savez(cache, **out)
+    return out

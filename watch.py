@@ -158,6 +158,18 @@ def code_arrays(n: int, groups: dict[str, np.ndarray]) -> list[np.ndarray]:
     return arrays
 
 
+def make_brain(mode: str, device: str = "auto", rewired: bool = False):
+    """fly-own: the graded optic lobe + spiking brain (hybrid.py), resting levels set under a grey view;
+    assisted / lamina: fly.ai's all-spiking brain."""
+    if mode == "fly-own":
+        from flyears.hybrid import HybridBrain
+        brain = HybridBrain(device=device, rewired=rewired)
+        eyes = senses.ColumnEyes(brain, vision.FLOW_W, vision.FLOW_H)
+        brain.calibrate(eyes.drive(np.full((vision.FLOW_H, vision.FLOW_W, 3), 128, np.uint8)))
+        return brain
+    return listen.make_brain(1, device, rewired=rewired)
+
+
 def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool, rgb: np.ndarray | None = None,
              stim: "senses.Stimuli | None" = None):
     G = recorded_groups(brain, eyes)
@@ -177,7 +189,10 @@ def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool, rgb: 
             pick = ids if len(ids) <= RASTER_PER_GROUP else sorted(rng.choice(ids, RASTER_PER_GROUP, replace=False))
             raster_rows += [gname] * len(pick)
             raster_ids += [int(x) for x in pick]
-    colour = senses.ColourEyes(brain, vision.FLOW_W) if rgb is not None else None
+    colour = None
+    if rgb is not None:                                    # each photoreceptor at its eye column when the
+        colour = senses.ColumnEyes(brain, vision.FLOW_W, vision.FLOW_H) if eyes.mode == "fly-own" \
+            else senses.ColourEyes(brain, vision.FLOW_W)  # graded brain sees; else by azimuth
     kc = G.get("mushroom body (Kenyon cells)", np.array([], int))
     is_kc = np.zeros(brain.n, bool)
     is_kc[kc] = True
@@ -462,9 +477,11 @@ def main() -> None:
     p.add_argument("--seconds", type=float, default=60.0, help="how much to watch")
     p.add_argument("--rewired", action="store_true", help="a degree-preserving scrambled brain")
     p.add_argument("--no-sound", action="store_true", help="eyes only")
-    p.add_argument("--vision", default="fly-own", choices=["fly-own", "assisted"],
-                   help="fly-own (default): light into the photoreceptors and the lamina, then only the fly's wiring; "
-                        "assisted: also this program's optical flow into T4/T5 and looming detector into LPLC2")
+    p.add_argument("--vision", default="fly-own", choices=["fly-own", "assisted", "lamina"],
+                   help="fly-own (default): light into the photoreceptors at their eye columns, a graded optic lobe "
+                        "(as in a real fly) and the spiking brain; nothing of ours detects anything. assisted: the "
+                        "all-spiking brain plus this program's optical flow into T4/T5 and looming detector into LPLC2. "
+                        "lamina: the all-spiking brain with darkening into L2/L3 (the earlier workaround)")
     p.add_argument("--stim", default="", help="smells, tastes, wind, temperature, humidity, touch on a schedule, "
                    "e.g. 'vinegar:5-15,heat:20-30' (seconds into the clip); names: " + ", ".join(senses.STIMULI))
     p.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
@@ -480,7 +497,7 @@ def main() -> None:
     whole = a.start == 0 and (not total or seconds >= total - 0.5)
     part = "" if whole else f"_{int(a.start // 60)}m{int(a.start % 60):02d}s_{seconds:g}s"   # parts kept apart
     tag = "_" + re.sub(r"[^\w]+", "-", a.stim.replace(":", "")).strip("-")[:40] if a.stim else ""
-    name = re.sub(r"[^\w-]+", "_", src.stem)[:60] + part + tag + ("_assisted" if a.vision == "assisted" else "") + \
+    name = re.sub(r"[^\w-]+", "_", src.stem)[:60] + part + tag + ("" if a.vision == "fly-own" else "_" + a.vision) + \
         ("_rewired" if a.rewired else "")
     out = Path(a.out) if a.out else HERE / "out" / "watch" / name
     out.mkdir(parents=True, exist_ok=True)
@@ -496,12 +513,13 @@ def main() -> None:
     env = ear.envelopes(audio.level(x)) if hear else np.zeros((len(frames) * STEPS_PER_FRAME, ear.N_BANDS), np.float32)
     need = len(frames) * STEPS_PER_FRAME
     env = np.vstack([env, np.zeros((max(0, need - len(env)), ear.N_BANDS), np.float32)])[:need]
-    brain = listen.make_brain(1, a.device, rewired=a.rewired)
+    brain = make_brain(a.vision, a.device, rewired=a.rewired)
     eyes = vision.Eyes(brain, fps=FPS, mode=a.vision)
     if not eyes.has_motion:
         log("  (no columns.npz in the fly data: motion detectors off, photoreceptors and looming only)")
-    log(f"  vision: {a.vision}" + (" (photoreceptors + lamina, then only the fly's wiring)" if a.vision == "fly-own"
-        else " (adds this program's motion and looming detectors)"))
+    log(f"  vision: {a.vision}" + {"fly-own": " (photoreceptors at their eye columns, graded optic lobe, nothing of ours)",
+                                       "assisted": " (adds this program's motion and looming detectors)",
+                                       "lamina": " (all-spiking brain, darkening into L2/L3)"}[a.vision])
     log(f"  {len(frames)} frames at {FPS} fps ({1000 // FPS} ms each = {STEPS_PER_FRAME} brain step"
         f"{'s' if STEPS_PER_FRAME > 1 else ''}), sound: {'yes' if hear else 'no'}, brain on {brain.device}")
     stim = senses.Stimuli(brain, schedule) if schedule else None

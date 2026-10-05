@@ -21,6 +21,9 @@ import watch
 from flyears import audio, ear, listen, senses, vision
 
 CHECK_S = 2.0                        # seconds re-simulated for B and C
+TOLERANCE = 0.005                    # B: largest difference allowed, as a share of the largest value. The graded
+                                     # brain sums continuous inputs on the GPU in a varying order, so two runs agree
+                                     # to floating-point rounding (about 0.05%), not bit for bit.
 
 
 def main() -> None:
@@ -62,7 +65,7 @@ def main() -> None:
         env = ear.envelopes(audio.level(x)) if v["sound"] else np.zeros((n_frames * 2, ear.N_BANDS), np.float32)
         need = n_frames * watch.STEPS_PER_FRAME
         env = np.vstack([env, np.zeros((max(0, need - len(env)), ear.N_BANDS), np.float32)])[:need]
-        brain = listen.make_brain(1, "auto", rewired=v["rewired"])
+        brain = watch.make_brain(v.get("vision", "assisted"), "auto", rewired=v["rewired"])
         mode = v.get("vision", "assisted")
         print(f"   vision mode: {mode}")
         eyes = vision.Eyes(brain, fps=v["fps"], mode=mode)
@@ -70,17 +73,18 @@ def main() -> None:
         names, rates, rest, *_ = watch.simulate(brain, eyes, frames, env, v["sound"], rgb=rgb, stim=stim)
         again = watch.simulate(brain, vision.Eyes(brain, fps=v["fps"], mode=mode), frames, env, v["sound"], rgb=rgb, stim=stim)[1]
         print(f"   same run twice: largest difference {np.abs(again - rates).max():.4g} "
-              f"({'deterministic' if np.abs(again - rates).max() == 0 else 'NOT deterministic'})")
+              f"({'bit for bit' if np.abs(again - rates).max() == 0 else 'floating-point rounding only'})")
         saved = rows[:need, 1:1 + len(names)]
         same_names = header[1:1 + len(names)] == [n.replace(",", " ") for n in names]
         diff = np.abs(saved - np.round(rates, 4))
         rel = diff.max() / max(1e-9, np.abs(saved).max())
         print(f"   {len(names)} groups x {need} steps compared; same groups: {same_names}")
         print(f"   largest difference: {diff.max():.4g} spikes/neuron/s ({rel:.2%} of the largest value)")
-        exact = diff.max() < 1e-2
-        print(f"   {'PASS' if exact and same_names else 'CHECK'}: saved timeline "
-              f"{'= the simulation, step for step' if exact else 'differs (GPU arithmetic is not bit-exact; see C)'}")
-        ok &= bool(same_names)
+        exact = diff.max() < 1e-2                             # only the 4-digit rounding of the saved file
+        close = rel < TOLERANCE                               # floating-point order on the GPU (graded brain)
+        verdict = "= the simulation, step for step" if exact else             f"= the simulation within floating-point rounding ({rel:.2%} < {TOLERANCE:.1%})" if close else             "DIFFERS from the simulation"
+        print(f"   {'PASS' if (exact or close) and same_names else 'FAIL'}: saved timeline {verdict}")
+        ok &= bool(same_names and (exact or close))
 
         # C ------------------------------------------------------------ nothing shown without a stimulus
         print("\nC. the same length of a plain grey view in silence")
