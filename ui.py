@@ -37,12 +37,14 @@ class Job:
         self.result = None
         self.started = 0.0
         self.proc = None
+        self.stopping = False
 
     def start(self, kind: str, cmd: list[str]) -> bool:
         with self.lock:
             if self.state == "running":
                 return False
             self.kind, self.state, self.lines, self.result, self.started = kind, "running", [], None, time.time()
+            self.stopping = False
         threading.Thread(target=self._run, args=(cmd,), daemon=True).start()
         return True
 
@@ -61,7 +63,7 @@ class Job:
                 if m:
                     self.result = Path(m.group(2).strip())
             code = self.proc.wait()
-            self.state = "done" if code == 0 else "error"
+            self.state = "stopped" if self.stopping else "done" if code == 0 else "error"
         except Exception as e:                            # noqa: BLE001
             self.lines.append(f"error: {e}")
             self.state = "error"
@@ -199,13 +201,18 @@ class Handler(BaseHTTPRequestHandler):
                     f.write(chunk)
                     left -= len(chunk)
             return self._json({"ok": True, "path": str(target)})
-        body = json.loads(self.rfile.read(length) or b"{}")
+        try:
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return self._json({"ok": False, "error": "could not read the request"}, 400)
         if url.path == "/watch":
             src = str(body.get("source") or "").strip().strip('"')
             if not src:
                 return self._json({"ok": False, "error": "give a link or a video file"}, 400)
-            if not re.match(r"https?://", src) and not Path(src).is_file():
+            if not re.match(r"https?://", src) and not (Path(src) if Path(src).is_absolute() else HERE / src).is_file():
                 return self._json({"ok": False, "error": f"no such file: {src}"}, 400)
+            if not re.match(r"https?://", src) and not Path(src).is_absolute():
+                src = str(HERE / src)
             cmd = [sys.executable, "-u", "-W", "ignore", "watch.py", src, "--start", str(float(body.get("start") or 0)),
                    "--seconds", str(float(body.get("seconds") or 60))]
             if body.get("rewired"):
@@ -213,8 +220,10 @@ class Handler(BaseHTTPRequestHandler):
             ok = JOB.start("watch", cmd)
             return self._json({"ok": ok, "error": None if ok else "the fly is busy with another job"}, 200 if ok else 409)
         if url.path == "/music":
-            folder = Path(str(body.get("folder") or HERE / "songs").strip().strip('"'))
-            if not folder.is_dir():
+            folder = Path(str(body.get("folder") or "songs").strip().strip('"'))
+            if not folder.is_absolute():                     # relative to this project, not the server's cwd
+                folder = HERE / folder
+            if not body.get("synthetic") and not folder.is_dir():
                 return self._json({"ok": False, "error": f"no such folder: {folder}"}, 400)
             cmd = [sys.executable, "-u", "-W", "ignore", "run.py", str(folder)]
             if body.get("synthetic"):
@@ -227,6 +236,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": ok, "error": None if ok else "the fly is busy with another job"}, 200 if ok else 409)
         if url.path == "/stop":
             if JOB.proc and JOB.state == "running":
+                JOB.stopping = True
                 JOB.proc.kill()
                 JOB.lines.append("stopped")
             return self._json({"ok": True})

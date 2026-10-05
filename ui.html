@@ -172,7 +172,8 @@ async function poll() {
       await refreshLibrary();
       if (j.state === "done" && j.kind === "watch" && j.result) { const it = LIB.find((x) => x.name === j.result); if (it) { show(it); $("msg").textContent = "done: playing below"; } }
       if (j.state === "done" && j.kind === "music" && j.result) { showReport(j.result); $("mmsg").textContent = "done"; }
-      if (j.state === "error") { $("msg").textContent = $("mmsg").textContent = "it stopped with an error: see the log on the right"; }
+      if (j.state === "stopped") { (j.kind === "music" ? $("mmsg") : $("msg")).textContent = "stopped"; }
+      if (j.state === "error") { (j.kind === "music" ? $("mmsg") : $("msg")).textContent = "stopped: " + (j.log[j.log.length - 1] || "an error (see the log)"); }
     }
     lastState = j.state;
   } catch { $("lampt").textContent = "NO SERVER"; }

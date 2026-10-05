@@ -347,7 +347,9 @@ def main() -> None:
     src = fetch(a.source, HERE / "out" / "watch" / "downloads")
     total = duration(src)
     seconds = max(0.5, min(a.seconds, total - a.start)) if total else a.seconds
-    name = re.sub(r"[^\w-]+", "_", src.stem)[:60] + ("_rewired" if a.rewired else "")
+    whole = a.start == 0 and (not total or seconds >= total - 0.5)
+    part = "" if whole else f"_{int(a.start // 60)}m{int(a.start % 60):02d}s_{seconds:g}s"   # parts kept apart
+    name = re.sub(r"[^\w-]+", "_", src.stem)[:60] + part + ("_rewired" if a.rewired else "")
     out = Path(a.out) if a.out else HERE / "out" / "watch" / name
     out.mkdir(parents=True, exist_ok=True)
     log(f"{src.name}: watching {seconds:.1f} s from {a.start:.1f} s")
@@ -383,8 +385,9 @@ def main() -> None:
     panel = Panel(brain, eyes, names, rates)
     env_frames = env.reshape(-1, STEPS_PER_FRAME, ear.N_BANDS).mean(1)
     log("  drawing the video...")
-    render(src, a.start, seconds, out / "fly_watching.mp4", panel, sim, env_frames, src.stem, a.rewired,
-           sound=has_audio(src))
+    part = out / "fly_watching.part.mp4"              # finished videos only: a stop mid-way leaves no broken file
+    render(src, a.start, seconds, part, panel, sim, env_frames, src.stem, a.rewired, sound=has_audio(src))
+    part.replace(out / "fly_watching.mp4")
     log(f"done: {out / 'fly_watching.mp4'}")
 
 
