@@ -177,7 +177,7 @@ def _cols():
 
 def test_rightward_motion_drives_the_right_cells():
     """Moving right: the left eye sees back-to-front (forward) motion, the right eye front-to-back."""
-    eyes = vision.Eyes(_fake_eye_brain(), _cols())
+    eyes = vision.Eyes(_fake_eye_brain(), _cols(), mode="assisted")
     tex = _texture(1)
     eyes.see(tex[10:10 + vision.FLOW_H, 10:10 + vision.FLOW_W])
     eyes.see(tex[10:10 + vision.FLOW_H, 8:8 + vision.FLOW_W])
@@ -187,7 +187,7 @@ def test_rightward_motion_drives_the_right_cells():
 
 
 def test_photoreceptors_follow_brightness():
-    eyes = vision.Eyes(_fake_eye_brain(), _cols())
+    eyes = vision.Eyes(_fake_eye_brain(), _cols(), mode="assisted")
     frame = np.zeros((vision.FLOW_H, vision.FLOW_W), np.uint8)
     frame[:, : vision.FLOW_W // 2] = 255                              # bright on the left
     p = eyes.photoreceptors(frame)
@@ -239,7 +239,7 @@ def test_same_speed_same_drive_at_any_frame_rate():
     tex = _texture(2)
     out = []
     for fps, step in ((25, 2), (50, 1)):
-        eyes = vision.Eyes(_fake_eye_brain(), _cols(), fps=fps)
+        eyes = vision.Eyes(_fake_eye_brain(), _cols(), fps=fps, mode="assisted")
         eyes.see(tex[10:10 + vision.FLOW_H, 10:10 + vision.FLOW_W])
         eyes.see(tex[10:10 + vision.FLOW_H, 10 - step:10 - step + vision.FLOW_W])
         out.append(eyes.last["motion"].copy())
@@ -281,3 +281,19 @@ def test_stimuli_only_while_scheduled():
     assert st.at(0.5) == [] and st.on(1.5) == ["vinegar"]
     (idx, v), = st.at(1.5)
     assert list(idx) == [0, 1, 2] and v == senses.STRENGTH
+
+
+def test_lamina_answers_darkening_only():
+    """Fly-own vision: L2/L3 get the darkening at their column (as real ones signal it), never brightening."""
+    from flyears import lamina
+    lam = {"cells": np.array([7, 8]), "eye": np.array(["L", "R"]), "front": np.array([0.5, 0.5], np.float32),
+           "up": np.array([0.5, 0.5], np.float32), "types": np.array(["L2", "L3"])}
+    d = lamina.LaminaDrive(lam)
+    bright = np.full((vision.FLOW_H, vision.FLOW_W), 200, np.uint8)
+    dark = bright.copy()
+    dark[:, : vision.FLOW_W // 2] = 40                                  # the left half gets darker
+    assert d.see(bright) == []                                          # first frame: nothing changed yet
+    inj = d.see(dark)
+    hit = {int(c) for idx, _ in inj for c in idx}
+    assert hit == {7}                                                   # only the left-eye cell, which got darker
+    assert d.see(bright) == []                                          # brightening back: nothing (OFF only)

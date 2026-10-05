@@ -63,10 +63,12 @@ def main() -> None:
         need = n_frames * watch.STEPS_PER_FRAME
         env = np.vstack([env, np.zeros((max(0, need - len(env)), ear.N_BANDS), np.float32)])[:need]
         brain = listen.make_brain(1, "auto", rewired=v["rewired"])
-        eyes = vision.Eyes(brain, fps=v["fps"])
+        mode = v.get("vision", "assisted")
+        print(f"   vision mode: {mode}")
+        eyes = vision.Eyes(brain, fps=v["fps"], mode=mode)
         stim = senses.Stimuli(brain, sched) if sched else None
         names, rates, rest, *_ = watch.simulate(brain, eyes, frames, env, v["sound"], rgb=rgb, stim=stim)
-        again = watch.simulate(brain, vision.Eyes(brain, fps=v["fps"]), frames, env, v["sound"], rgb=rgb, stim=stim)[1]
+        again = watch.simulate(brain, vision.Eyes(brain, fps=v["fps"], mode=mode), frames, env, v["sound"], rgb=rgb, stim=stim)[1]
         print(f"   same run twice: largest difference {np.abs(again - rates).max():.4g} "
               f"({'deterministic' if np.abs(again - rates).max() == 0 else 'NOT deterministic'})")
         saved = rows[:need, 1:1 + len(names)]
@@ -85,7 +87,7 @@ def main() -> None:
         grey = np.full_like(frames, 128)
         grey_rgb = np.full_like(rgb, 128) if rgb is not None else None
         brain.reset(1)
-        names2, rates2, rest2, *_ = watch.simulate(brain, vision.Eyes(brain, fps=v["fps"]), grey, np.zeros_like(env), False,
+        names2, rates2, rest2, *_ = watch.simulate(brain, vision.Eyes(brain, fps=v["fps"], mode=mode), grey, np.zeros_like(env), False,
                                                    rgb=grey_rgb)
         dev = rates2.mean(0) - rest2
         clip_dev = rates.mean(0) - rest

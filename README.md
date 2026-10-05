@@ -105,9 +105,9 @@ Every watched video gets a viewer (**Brain, body & emotions** on the result, or
   ears, hearing relay, descending neurons, turning, wings, each leg, neck), a spike raster of real
   neurons (4 per group, last 5 s) and a live table of every recorded group against rest.
 
-On the test video the escape neuron (DNp01) fired 6.9 spikes/s while the disc approached, 0.8
-for the sliding bar and 0 when still: looming drives the giant fiber, the fly's real escape
-circuit, from the wiring alone. The jump motor neuron (TTMn) did not follow. The reward dopamine
+With assisted vision, on the test video the escape neuron (DNp01) fired 6.9 spikes/s while the disc
+approached, 0.8 for the sliding bar and 0 when still: our looming detector's signal in LPLC2 reaches
+the giant fiber through the fly's own wiring (with fly-own vision: no escape response, see Vision above). The jump motor neuron (TTMn) did not follow. The reward dopamine
 neurons (PAM) fire on every step at rest and while watching (50 spikes/s, this model's ceiling) and
 the punishment ones (PPL1) nearly so: saturated, they cannot report anything here, and the viewer
 marks them so.
@@ -139,6 +139,42 @@ and its memory output neurons are near the ceiling too. So the learning centre c
 responses here; the viewer says so. Smell projection neurons do respond a little (about +1
 spike/s), and the insulin cells rose with sugar in one run (1.5 -> 2.6 spikes/s).
 
+## Vision: fly-own (default) or assisted
+
+**Fly-own vision (default)** uses only the fly: light goes into the photoreceptors, and the lamina's
+L2/L3 cells get the darkening at their eye column (what real L2/L3 signal; each cell's column is
+placed from the MaleCNS optic-column table). Everything after that is the connectome. Nothing of
+this program detects motion or looming.
+
+Why the lamina needs this: in this spiking simulation the photoreceptors' signal stops at their first
+synapse. Their synapses onto the lamina are inhibitory (histamine, as in a real fly), and a real fly's
+lamina cells are graded: they carry vision as voltage swings without spiking. Here every neuron is a
+spiking cell resting below threshold, so that inhibition only keeps the lamina silent. Measured with
+light into the photoreceptors alone, a moving bar left every stage flat: L1 0.27 -> 0.27, Mi1 0.14 ->
+0.14, T4 0.49 -> 0.49 spikes/neuron/s.
+
+**Assisted vision** (`--vision assisted`, or the checkbox) adds this program's detectors: optical
+flow into each T4/T5 cell along its preferred direction, and a four-way expansion detector into
+LPLC2. Its outputs are tagged `_assisted` and the viewer says ASSISTED.
+
+The test video (bar right, bar left, approaching disc), spikes/neuron/s:
+
+| | photoreceptors only | **fly-own** (+ lamina) | assisted |
+|---|---|---|---|
+| T5 (dark-edge motion), moving bar | no change | 0.5 -> about 0.9 | driven directly |
+| T4 (bright-edge motion) | no change | no change | driven directly |
+| direction selective (left vs right) | - | **no** | yes (ours) |
+| LPLC2: still -> bar / approaching disc | no change | 0.6 -> 1.2 / 1.3 (any dark edge, not looming-specific) | 0.5 -> 2.4 / **14.1** |
+| escape (giant fiber), approaching disc | no change | **no response** (0.0; 0.6 in other phases = noise) | **6.4** |
+
+So with fly-own vision the fly's own wiring carries dark edges from the lamina through Tm1/Tm2/Tm9
+to T5 and on to LPLC2, weakly and not specifically for looming, and the escape neuron does not respond. It cannot see bright edges (the ON pathway runs
+through L1's inhibitory synapses, which work in a fly by releasing a constant inhibition this model
+does not have) and it is not direction selective (T5's direction comes from its inputs being
+filtered at different speeds; here every synapse takes the same 20 ms). The strong escape response
+reported earlier came from assisted vision: the LPLC2 -> giant fiber wiring is the fly's, the looming
+detection was ours.
+
 ## What is real, what is modelled (and how it is checked)
 
 **Real (simulated, not drawn or edited):** every spike, rate, raster mark and bar comes from
@@ -158,11 +194,11 @@ watched video:
 
 All watched videos pass all three.
 
-**Modelled by this program, then injected** (the fly's eyes and ears are not simulated cell by cell):
-motion is optical flow from the frames, as speed (the same at any frame rate), put into each T4/T5
-cell along its preferred direction; looming is a four-way expansion detector put into LPLC2;
-photoreceptors get the brightness per eye column only; the ears get 8 frequency bands (JO-B low,
-JO-A high: an assumption). From there on, everything is the connectome.
+**Modelled by this program, then injected** (transduction: the physical world into receptor
+neurons): brightness per eye column into the photoreceptors (R8 green, R7 blue), darkening into
+L2/L3 (see above), 8 frequency bands into the ears (JO-B low, JO-A high: an assumption), smells and
+tastes into their receptors. In assisted vision only, also motion into T4/T5 and looming into LPLC2.
+From there on, everything is the connectome.
 
 **Drawn, not simulated:** the fly's body is a picture posed by its motor neurons: no muscles, no
 physics, no wingbeat (real wings beat ~200 times a second, far faster than the 20 ms steps).
@@ -254,6 +290,7 @@ the beeps (9.1 during a beep, 3.8 between).
 | `flyears/vision.py` | video frames -> photoreceptors, T4/T5 motion detectors, LPLC2 looming |
 | `watch.py` | a link or video file -> the fly watches it -> video, timeline, summary |
 | `flyears/body.py` | body parts, behaviour commands and internal states, from real neurons |
+| `flyears/lamina.py` | fly-own vision: darkening into L2/L3 at each cell's eye column |
 | `flyears/senses.py` | colour vision, smell, taste, wind, temperature, humidity, touch; memory, compass, clock readouts |
 | `ui.py`, `ui.html`, `view.html`, `retro.css` | the browser pages (port 8790) |
 | `audit.py` | checks a watched video: timing, re-simulation, no phantom responses |

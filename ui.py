@@ -217,6 +217,8 @@ class Handler(BaseHTTPRequestHandler):
                    "--seconds", str(float(body.get("seconds") or 60))]
             if body.get("rewired"):
                 cmd.append("--rewired")
+            if body.get("assisted"):
+                cmd += ["--vision", "assisted"]
             if body.get("stim"):
                 from flyears import senses
                 try:

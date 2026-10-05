@@ -107,10 +107,11 @@ canvas{display:block;width:100%;height:auto}
   <div><b>Measured from the simulation</b> (every number, spike, raster mark and bar): the spiking of the real
   MaleCNS wiring, 166,700 neurons, one 20 ms step at a time, in the video's own time. <code>audit.py</code> re-runs it
   and gets the same numbers step for step; a blank grey view in silence stays at rest.</div>
-  <div><b>Modelled by this program, then injected</b> (the fly's eyes and ears are not simulated cell by cell):
-  motion is optical flow computed from the frames and put into T4/T5 cells along their preferred direction;
-  looming is our four-way expansion detector put into LPLC2; photoreceptors get only the brightness per eye
-  column; the ears get 8 frequency bands, JO-B low and JO-A high (an assumption). The connectome takes it from there.</div>
+  <div><b>Modelled by this program, then injected</b> <span id="visionmode"></span>: light goes into the photoreceptors
+  (brightness per eye column; R8 green, R7 blue); L2/L3 lamina cells get the darkening at their column, as real ones
+  signal it, because this spiking model cannot pass the photoreceptors' graded inhibition on; the ears get 8 frequency
+  bands, JO-B low and JO-A high (an assumption); smells and tastes go into their receptors. The connectome does the rest.
+  <span id="assistnote"></span></div>
   <div><b>Drawn, not simulated</b>: the fly's body is a picture posed by its motor neurons (no muscles or physics,
   no wingbeat: real wings beat 200 times a second); "emotion" words name populations, not feelings.
   Scales are fixed for every video: a full bar = +10 spikes/neuron/s, an emotion bar = +-5,
@@ -124,7 +125,7 @@ canvas{display:block;width:100%;height:auto}
   <p class="note">The grey 160 x 90 picture our motion and looming detectors work on. The photoreceptors themselves get only the brightness of each eye column.</p></section>
  <section class="card"><h2><span>Left eye T4/T5</span><span id="nL"></span></h2>
   <div class="screen" style="padding:4px"><canvas id="eyeL" width="320" height="220"></canvas></div>
-  <p class="note">Each dot is a T4/T5 cell at its place in the eye; colour = the direction it prefers, brightness = the motion drive injected into it now (from optical flow).</p></section>
+  <p class="note">Each dot is a T4/T5 cell at its place in the eye, lit when it SPIKED this frame; colour = the direction it prefers.</p></section>
  <section class="card"><h2><span>Right eye T4/T5</span><span id="nR"></span></h2>
   <div class="screen" style="padding:4px"><canvas id="eyeR" width="320" height="220"></canvas></div>
   <p class="note">Front of each eye toward the middle. Colour wheel: 0 = toward the front, 90 = up, 180 = toward the back, 270 = down.</p></section>
@@ -190,8 +191,12 @@ async function load() {
   if (!V.ear) document.querySelectorAll(".inside .note, .wide .note").forEach((n) => (n.textContent = "Watch this video again to fill these panels (it was watched before they existed)."));
   V.names.forEach((n, i) => (idx[n] = i));
   $("title").textContent = name;
-  $("meta").textContent = `${Math.round(V.seconds)} s from ${fmt(V.start)}${V.rewired ? " · scrambled brain" : ""}${V.sound ? "" : " · no sound"}`;
+  $("meta").textContent = `${Math.round(V.seconds)} s from ${fmt(V.start)} · ${V.vision === "fly-own" ? "fly-own vision" : "ASSISTED vision (detectors of this program)"}${V.rewired ? " · scrambled brain" : ""}${V.sound ? "" : " · no sound"}`;
   $("v").src = base + "clip.mp4";
+  const own = V.vision === "fly-own";
+  $("visionmode").textContent = own ? "(fly-own vision)" : "(ASSISTED vision)";
+  $("assistnote").textContent = own ? "Fly-own vision sees dark edges only (the ON pathway needs a resting inhibition this model lacks) and without direction selectivity (every synapse here takes the same 20 ms)."
+    : "ASSISTED: this program also computed motion (optical flow, into T4/T5 along each cell's preferred direction) and looming (a four-way expansion detector, into LPLC2). Those detections are ours, not the fly's.";
   prepare();
   requestAnimationFrame(loop);
 }

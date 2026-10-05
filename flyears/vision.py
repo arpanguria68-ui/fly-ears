@@ -62,8 +62,15 @@ def flow(prev: np.ndarray, cur: np.ndarray, sigma: float = 3.0) -> tuple[np.ndar
 
 
 class Eyes:
-    def __init__(self, brain, cols: dict | None = None, fps: float = REF_FPS):
+    def __init__(self, brain, cols: dict | None = None, fps: float = REF_FPS, mode: str = "fly-own"):
+        """mode "fly-own": photoreceptors + the lamina (L2/L3, see lamina.py), nothing of ours after that.
+        mode "assisted": also this program's optical flow into T4/T5 and looming detector into LPLC2."""
         self.brain = brain
+        self.mode = mode
+        self.lamina = None
+        if mode == "fly-own":
+            from .lamina import LaminaDrive, build_map
+            self.lamina = LaminaDrive(build_map())
         self.speed = fps / REF_FPS                     # pixels/frame -> the same speed whatever the frame rate
         cols = cols if cols is not None else load_columns()
         self.has_motion = cols is not None
@@ -95,6 +102,10 @@ class Eyes:
         """One video frame (FLOW_H, FLOW_W uint8): photoreceptor drive and the injections."""
         photo = self.photoreceptors(frame)
         inject = []
+        if self.lamina is not None:                       # fly-own: the lamina, then the fly's wiring
+            self.last = {"motion": None, "loom": (0.0, 0.0)}
+            self.prev = frame
+            return photo, self.lamina.see(frame)
         if self.prev is not None:
             u, v, It = flow(self.prev, frame)
             u, v = u * self.speed, v * self.speed

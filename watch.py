@@ -29,6 +29,7 @@ HERE = Path(__file__).resolve().parent
 FPS = 25                                 # set per video in main(): 50 when the source has 50+ frames a second,
 STEPS_PER_FRAME = 2                      # so each 20 ms brain step gets its own frame; else 25 (40 ms = 2 steps)
 FULL = 10.0                              # spikes/neuron/s above rest that fills a meter (fixed, every video)
+VISION = "fly-own"                       # set in main()
 REST_SETTLE, REST_MEASURE = 100, 100     # steps: 2 s to settle, then 2 s of rest measured
 VW, VH = 768, 432                        # the video in the output
 OUT_W, OUT_H = 1280, 720
@@ -184,6 +185,10 @@ def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool, rgb: 
     epg_index = np.full(brain.n, -1)
     epg_index[epg] = np.arange(len(epg))
     kc_active = np.zeros(len(frames), np.float32)          # share of Kenyon cells firing in each frame
+    tindex = np.full(brain.n, -1)                          # the eye maps show T4/T5 cells' own spikes
+    if eyes.has_motion:
+        tindex[eyes.cells] = np.arange(len(eyes.cells))
+    t45 = np.zeros((len(frames), len(eyes.cells) if eyes.has_motion else 0), np.uint8)
     epg_bits = np.zeros((len(frames), len(epg)), bool)
     stim_on: list[list[str]] = []
     rindex = np.full(brain.n, -1)
@@ -216,6 +221,8 @@ def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool, rgb: 
             fired_frame.append(f)
             r = rindex[f]
             raster[i, r[r >= 0]] = True
+            r = tindex[f]
+            t45[i, r[r >= 0]] += 1
         spikes.append(np.concatenate(fired_frame))
         both = spikes[-1]
         if len(kc):
@@ -223,7 +230,7 @@ def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool, rgb: 
         e = epg_index[both]
         epg_bits[i, e[e >= 0]] = True
         stim_on.append(stim.on(i / FPS) if stim is not None else [])
-        motion.append(eyes.last["motion"] if eyes.last["motion"] is not None else None)
+        motion.append(t45[i])                              # spikes of each T4/T5 cell this frame (0..steps)
         loom[i] = eyes.last["loom"]
         light[i] = float(photo.mean())
         if (i + 1) % (FPS * 10) == 0 or i + 1 == len(frames):
@@ -320,7 +327,7 @@ class Panel:
         img[by:by + bh, bx:bx + bw] = np.clip(sub * (1 - g) + np.array(AMBER) * g, 0, 255).astype(np.uint8)
         if self.eye_px is not None and motion is not None:
             for (x, y, w, h), (m, px, py) in zip(self.EYES, self.eye_px):
-                d = np.clip(motion[m] / vision.CAP, 0, 1)
+                d = np.clip(motion[m] / STEPS_PER_FRAME, 0, 1)
                 on = d > 0.02
                 for dx in (0, 1):
                     for dy in (0, 1):
@@ -346,10 +353,11 @@ def labels(seconds: float, title: str, rewired: bool) -> str:
     f = str(FONT).replace("\\", "/").replace(":", "\\:")
     t = lambda s, x, y, size=16, color="0x2a2925": (  # noqa: E731
         f"drawtext=fontfile='{f}':text='{s}':x={x}:y={y}:fontsize={size}:fontcolor={color}")
-    items = [t("FLYBRAIN", 22, 9, 22, "0xc41f29"), t("THE FLY IS WATCHING" + (" (REWIRED BRAIN)" if rewired else ""), 170, 13, 16, "0xebe5d7"),
+    items = [t("FLYBRAIN", 22, 9, 22, "0xc41f29"), t("THE FLY IS WATCHING" + (" (REWIRED BRAIN)" if rewired else "") +
+               (" - ASSISTED VISION" if VISION == "assisted" else " - FLY-OWN VISION"), 170, 13, 16, "0xebe5d7"),
              t(title[:60].replace("'", "").replace(":", " "), 520, 13, 15, "0x8f897d"),
              t("01 WHAT IT SEES AND HEARS", 24, 52, 14), t("02 ALL 166,700 NEURONS (AMBER = FIRING)", 812, 52, 14),
-             t("03 LEFT EYE T4/T5", 812, 380, 14), t("RIGHT EYE T4/T5", 1042, 380, 14),
+             t("03 LEFT EYE T4/T5 SPIKES", 812, 380, 14), t("RIGHT EYE T4/T5 SPIKES", 1042, 380, 14),
              t("04 RESPONSE", 812, 536, 14), t("05 EARS 80 Hz - 1.2 kHz", 24, 536, 14),
              t("LOOMING  L", 420, 660, 13, "0xebe5d7"), t("R", 600, 660, 13, "0xebe5d7")]
     for r, (label, _) in enumerate(Panel.LIST):
@@ -395,7 +403,7 @@ def save_view(out: Path, brain, sim, src: Path, start: float, seconds: float, so
     extra = sim[6]
     if eyes.has_motion:                                    # T4/T5 drive per frame, 0..255
         blank = np.zeros(len(eyes.cells), np.uint8)
-        m = np.stack([blank if d is None else np.round(np.clip(d / vision.CAP, 0, 1) * 255).astype(np.uint8)
+        m = np.stack([blank if d is None else np.round(np.clip(d / STEPS_PER_FRAME, 0, 1) * 255).astype(np.uint8)
                       for d in motion])
         (out / "motion.bin").write_bytes(m.tobytes())
         eyes_file = out.parent / "eyes.json"
@@ -439,7 +447,8 @@ def save_view(out: Path, brain, sim, src: Path, start: float, seconds: float, so
             "raster_rows": extra["raster_rows"], "raster_bytes": int((len(extra["raster_rows"]) + 7) // 8),
             "kc_active": np.round(extra["kc_active"], 4).tolist(), "epg_angle": epg_angle,
             "epg_bytes": int((len(epg_angle) + 7) // 8), "stim_on": extra["stim_on"], "schedule": schedule,
-            "stimuli": {k: {"sense": v[2], "what": v[3]} for k, v in senses.STIMULI.items()}, "colour": True}
+            "stimuli": {k: {"sense": v[2], "what": v[3]} for k, v in senses.STIMULI.items()}, "colour": True,
+            "vision": eyes.mode}
     (out / "view.json").write_text(json.dumps(view), encoding="utf-8")
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(start), "-t", str(seconds), "-i", str(src), "-vf",
                     "scale=854:-2", "-c:v", "libx264", "-crf", "23", "-preset", "veryfast", "-c:a", "aac",
@@ -453,21 +462,26 @@ def main() -> None:
     p.add_argument("--seconds", type=float, default=60.0, help="how much to watch")
     p.add_argument("--rewired", action="store_true", help="a degree-preserving scrambled brain")
     p.add_argument("--no-sound", action="store_true", help="eyes only")
+    p.add_argument("--vision", default="fly-own", choices=["fly-own", "assisted"],
+                   help="fly-own (default): light into the photoreceptors and the lamina, then only the fly's wiring; "
+                        "assisted: also this program's optical flow into T4/T5 and looming detector into LPLC2")
     p.add_argument("--stim", default="", help="smells, tastes, wind, temperature, humidity, touch on a schedule, "
                    "e.g. 'vinegar:5-15,heat:20-30' (seconds into the clip); names: " + ", ".join(senses.STIMULI))
     p.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     p.add_argument("--out", default=None, help="output folder (default out/watch/<name>)")
     a = p.parse_args()
-    global FPS, STEPS_PER_FRAME
+    global FPS, STEPS_PER_FRAME, VISION
     src = fetch(a.source, HERE / "out" / "watch" / "downloads")
     FPS = 50 if source_fps(src) >= 48 else 25       # a real frame for every 20 ms step when the video has one
     STEPS_PER_FRAME = 50 // FPS
+    VISION = a.vision
     total = duration(src)
     seconds = max(0.5, min(a.seconds, total - a.start)) if total else a.seconds
     whole = a.start == 0 and (not total or seconds >= total - 0.5)
     part = "" if whole else f"_{int(a.start // 60)}m{int(a.start % 60):02d}s_{seconds:g}s"   # parts kept apart
     tag = "_" + re.sub(r"[^\w]+", "-", a.stim.replace(":", "")).strip("-")[:40] if a.stim else ""
-    name = re.sub(r"[^\w-]+", "_", src.stem)[:60] + part + tag + ("_rewired" if a.rewired else "")
+    name = re.sub(r"[^\w-]+", "_", src.stem)[:60] + part + tag + ("_assisted" if a.vision == "assisted" else "") + \
+        ("_rewired" if a.rewired else "")
     out = Path(a.out) if a.out else HERE / "out" / "watch" / name
     out.mkdir(parents=True, exist_ok=True)
     log(f"{src.name}: watching {seconds:.1f} s from {a.start:.1f} s")
@@ -483,9 +497,11 @@ def main() -> None:
     need = len(frames) * STEPS_PER_FRAME
     env = np.vstack([env, np.zeros((max(0, need - len(env)), ear.N_BANDS), np.float32)])[:need]
     brain = listen.make_brain(1, a.device, rewired=a.rewired)
-    eyes = vision.Eyes(brain, fps=FPS)
+    eyes = vision.Eyes(brain, fps=FPS, mode=a.vision)
     if not eyes.has_motion:
         log("  (no columns.npz in the fly data: motion detectors off, photoreceptors and looming only)")
+    log(f"  vision: {a.vision}" + (" (photoreceptors + lamina, then only the fly's wiring)" if a.vision == "fly-own"
+        else " (adds this program's motion and looming detectors)"))
     log(f"  {len(frames)} frames at {FPS} fps ({1000 // FPS} ms each = {STEPS_PER_FRAME} brain step"
         f"{'s' if STEPS_PER_FRAME > 1 else ''}), sound: {'yes' if hear else 'no'}, brain on {brain.device}")
     stim = senses.Stimuli(brain, schedule) if schedule else None

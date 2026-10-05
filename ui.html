@@ -61,6 +61,7 @@ pre.report{font:12px/1.45 var(--mono);white-space:pre-wrap;max-height:520px;over
     <label>start at <input type="text" id="start" value="0:00" style="width:80px" aria-label="start time (m:ss or seconds)"></label>
     <label>watch for <input type="number" id="secs" value="60" min="1" max="600" aria-label="seconds to watch"> s</label>
     <label><input type="checkbox" id="rewired"> scrambled brain (control)</label>
+    <label title="adds this program's optical-flow motion detector (into T4/T5) and looming detector (into LPLC2); without it, vision is the fly's own wiring from the lamina on"><input type="checkbox" id="assisted"> assisted vision</label>
     <button type="button" class="big" id="go">Watch</button>
    </div>
    <div class="stimbox">
@@ -156,7 +157,7 @@ $("stimadd").onclick = () => {
 };
 $("go").onclick = async () => {
   const stim = STIM.map(([n, a, b]) => `${n}:${a}-${b}`).join(",");
-  const r = await post("/watch", { source: $("src").value, start: seconds($("start").value), seconds: +$("secs").value, rewired: $("rewired").checked, stim });
+  const r = await post("/watch", { source: $("src").value, start: seconds($("start").value), seconds: +$("secs").value, rewired: $("rewired").checked, assisted: $("assisted").checked, stim });
   $("msg").textContent = r.ok ? "the fly is watching..." : r.error;
 };
 $("mgo").onclick = async () => {
