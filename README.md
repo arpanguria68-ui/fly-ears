@@ -99,11 +99,18 @@ Every watched video gets a viewer (**Brain, body & emotions** on the result, or
   excitement (octopamine), desire (pC1), anger (aIPg), mood (serotonin), appetite (NPF). A readout
   of this model, not a measured feeling.
 * **Emotions over time** (click to jump) and **strongest moments** (each state's biggest peaks).
+* **Inside the brain**: the retina (the grey picture the eyes get), both eyes' 13,581 motion
+  detectors at their places in the eye coloured by preferred direction, the ear's frequency
+  bands with light / looming / motion per side, left vs right for every paired pathway (eyes,
+  ears, hearing relay, descending neurons, turning, wings, each leg, neck), a spike raster of real
+  neurons (4 per group, last 5 s) and a live table of every recorded group against rest.
 
 On the test video the escape neuron (DNp01) fired 6.9 spikes/s while the disc approached, 0.8
 for the sliding bar and 0 when still: looming drives the giant fiber, the fly's real escape
-circuit, from the wiring alone. The jump motor neuron (TTMn) did not follow, and the reward and
-punishment dopamine neurons (PAM, PPL1) stay silent in this model.
+circuit, from the wiring alone. The jump motor neuron (TTMn) did not follow. The reward dopamine
+neurons (PAM) fire on every step at rest and while watching (50 spikes/s, this model's ceiling) and
+the punishment ones (PPL1) nearly so: saturated, they cannot report anything here, and the viewer
+marks them so.
 
 ## Watch a video: the fly sees and hears it, frame by frame
 

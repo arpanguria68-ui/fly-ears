@@ -100,7 +100,23 @@ def recorded_groups(brain, eyes) -> dict[str, np.ndarray]:
          "photoreceptors": np.asarray(brain.visual)}
     g.update(listen.groups(brain))
     g.update(body.groups(brain))                           # body parts, behaviour commands, states
+    side = np.asarray(brain.side).astype(str)              # left vs right for the main pathways
+    if eyes.has_motion:
+        g["T4/T5 L"], g["T4/T5 R"] = eyes.cells[eyes.left], eyes.cells[~eyes.left]
+    g["LPLC2 L"], g["LPLC2 R"] = eyes.lplc2["L"], eyes.lplc2["R"]
+    ear_cells, _ = ear.ear_map(brain)
+    for s in "LR":
+        g[f"ear {s}"] = ear_cells[side[ear_cells] == s]
+        for key, short in (("WED", "WED"), ("descending_neuron", "descending")):
+            if key in g:
+                g[f"{short} {s}"] = g[key][side[g[key]] == s]
     return {k: v for k, v in g.items() if len(v)}
+
+
+RASTER = ("ear JO-A/B", "AMMC", "WED", "T4/T5 (motion)", "LPLC2 (looming)", "photoreceptors", "escape", "walk",
+          "turn L", "turn R", "back up", "groom", "fear", "pleasure", "distress", "excitement", "desire", "anger",
+          "mood", "wing power L", "wing power R", "leg front L", "leg front R", "descending_neuron")
+RASTER_PER_GROUP = 4                    # real neurons per group shown in the browser's spike raster
 
 
 def code_arrays(n: int, groups: dict[str, np.ndarray]) -> list[np.ndarray]:
@@ -128,6 +144,18 @@ def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool):
     steps = len(frames) * STEPS_PER_FRAME
     rates = np.zeros((steps, K), np.float32)
     spikes, motion, loom = [], [], np.zeros((len(frames), 2), np.float32)
+    rng = np.random.default_rng(0)                         # the raster's neurons, picked in advance
+    raster_rows, raster_ids = [], []
+    for gname in RASTER:
+        if gname in G:
+            ids = [int(x) for x in G[gname] if int(x) not in raster_ids]
+            pick = ids if len(ids) <= RASTER_PER_GROUP else sorted(rng.choice(ids, RASTER_PER_GROUP, replace=False))
+            raster_rows += [gname] * len(pick)
+            raster_ids += [int(x) for x in pick]
+    rindex = np.full(brain.n, -1)
+    rindex[raster_ids] = np.arange(len(raster_ids))
+    raster = np.zeros((len(frames), len(raster_ids)), bool)
+    light = np.zeros(len(frames), np.float32)
     rest = np.zeros(K, np.float32)
     grey = np.full((vision.FLOW_H, vision.FLOW_W), 128, np.uint8)
     brain.reset(1)
@@ -147,14 +175,18 @@ def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool):
             f = brain.step(eye_drive=photo, inject=inject + sound)
             rates[s] = sum(np.bincount(c[f][c[f] >= 0], minlength=K) for c in codes)
             fired_frame.append(f)
+            r = rindex[f]
+            raster[i, r[r >= 0]] = True
         spikes.append(np.concatenate(fired_frame))
         motion.append(eyes.last["motion"] if eyes.last["motion"] is not None else None)
         loom[i] = eyes.last["loom"]
+        light[i] = float(photo.mean())
         if (i + 1) % (FPS * 10) == 0 or i + 1 == len(frames):
             log(f"  watched {(i + 1) / FPS:.0f} s of {len(frames) / FPS:.0f} s "
                 f"({(time.perf_counter() - t0) / (i + 1) * FPS:.1f} s per video second)")
     to_rate = 1 / (sizes * brain.dt)
-    return names, rates * to_rate, rest * to_rate, spikes, motion, loom
+    extra = {"raster": raster, "raster_rows": raster_rows, "light": light}
+    return names, rates * to_rate, rest * to_rate, spikes, motion, loom, extra
 
 
 # ---------------------------------------------------------------- the picture
@@ -280,7 +312,7 @@ def labels(seconds: float, title: str, rewired: bool) -> str:
 
 
 def render(src: Path, start: float, seconds: float, out: Path, panel: Panel, sim, env_frames, title, rewired, sound):
-    names, rates, rest, spikes, motion, loom = sim
+    names, rates, rest, spikes, motion, loom = sim[:6]
     n = len(spikes)
     dec = subprocess.Popen(["ffmpeg", "-v", "error", "-ss", str(start), "-t", str(seconds), "-i", str(src), "-vf",
                             f"fps={FPS},scale={VW}:{VH}:force_original_aspect_ratio=decrease,"
@@ -308,9 +340,25 @@ def render(src: Path, start: float, seconds: float, out: Path, panel: Panel, sim
 MAX_SPIKES = 3000                         # spikes kept per frame for the browser's brain map
 
 
-def save_view(out: Path, brain, sim, src: Path, start: float, seconds: float, source: str, rewired: bool, hear: bool):
-    """Data for the browser viewer: per-frame rates of every group, sampled spikes, a clean clip."""
-    names, rates, rest, spikes, _, loom = sim
+def save_view(out: Path, brain, sim, src: Path, start: float, seconds: float, source: str, rewired: bool, hear: bool,
+              env_frames: np.ndarray, eyes):
+    """Data for the browser viewer: per-frame rates of every group, sampled spikes, eye maps, the ear's
+    bands, a spike raster of real neurons, and a clean clip."""
+    names, rates, rest, spikes, motion, loom = sim[:6]
+    extra = sim[6]
+    if eyes.has_motion:                                    # T4/T5 drive per frame, 0..255
+        blank = np.zeros(len(eyes.cells), np.uint8)
+        m = np.stack([blank if d is None else np.round(np.clip(d / vision.CAP, 0, 1) * 255).astype(np.uint8)
+                      for d in motion])
+        (out / "motion.bin").write_bytes(m.tobytes())
+        eyes_file = out.parent / "eyes.json"
+        if not eyes_file.exists():
+            cols = vision.load_columns()
+            hue = (np.degrees(np.arctan2(cols["pref"][:, 1], cols["pref"][:, 0])) % 360).round().astype(int)
+            eyes_file.write_text(json.dumps({"left": eyes.left.astype(int).tolist(),
+                                             "front": np.round(cols["front"], 3).tolist(),
+                                             "up": np.round(cols["up"], 3).tolist(), "hue": hue.tolist()}))
+    (out / "raster.bin").write_bytes(np.packbits(extra["raster"], axis=1).tobytes())
     per = rates.reshape(-1, STEPS_PER_FRAME, rates.shape[1]).mean(1)
     rng = np.random.default_rng(0)
     kept = [s if len(s) <= MAX_SPIKES else np.sort(rng.choice(s, MAX_SPIKES, replace=False)) for s in spikes]
@@ -327,7 +375,11 @@ def save_view(out: Path, brain, sim, src: Path, start: float, seconds: float, so
     view = {"source": source, "start": start, "seconds": seconds, "rewired": rewired, "sound": hear, "fps": FPS,
             "frames": len(per), "names": names, "rest": [round(float(x), 4) for x in rest],
             "rates": [[round(float(x), 3) for x in row] for row in per], "loom": np.round(loom, 3).tolist(),
-            "states": state_rows, "state_source": body.STATE_SOURCE, "neurons": int(brain.n)}
+            "states": state_rows, "state_source": body.STATE_SOURCE, "neurons": int(brain.n),
+            "ear": np.round(env_frames, 3).tolist(), "bands": np.round(ear.BAND_EDGES).astype(int).tolist(),
+            "light": np.round(extra["light"], 3).tolist(), "has_motion": bool(eyes.has_motion),
+            "eye_cells": int(len(eyes.cells)) if eyes.has_motion else 0,
+            "raster_rows": extra["raster_rows"], "raster_bytes": int((len(extra["raster_rows"]) + 7) // 8)}
     (out / "view.json").write_text(json.dumps(view), encoding="utf-8")
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(start), "-t", str(seconds), "-i", str(src), "-vf",
                     "scale=854:-2", "-c:v", "libx264", "-crf", "23", "-preset", "veryfast", "-c:a", "aac",
@@ -381,12 +433,12 @@ def main() -> None:
     log("  biggest changes (spikes per neuron per second, at rest -> while watching):")
     for r in summary[:8]:
         log(f"    {r['group']:22s} {r['rest']:7.3f} -> {r['watching']:7.3f}  ({r['change']:+.3f})")
-    save_view(out, brain, sim, src, a.start, seconds, a.source, a.rewired, hear)
-    panel = Panel(brain, eyes, names, rates)
     env_frames = env.reshape(-1, STEPS_PER_FRAME, ear.N_BANDS).mean(1)
+    save_view(out, brain, sim, src, a.start, seconds, a.source, a.rewired, hear, env_frames, eyes)
+    panel = Panel(brain, eyes, names, rates)
     log("  drawing the video...")
     part = out / "fly_watching.part.mp4"              # finished videos only: a stop mid-way leaves no broken file
-    render(src, a.start, seconds, part, panel, sim, env_frames, src.stem, a.rewired, sound=has_audio(src))
+    render(src, a.start, seconds, part, panel, sim[:6], env_frames, src.stem, a.rewired, sound=has_audio(src))
     part.replace(out / "fly_watching.mp4")
     log(f"done: {out / 'fly_watching.mp4'}")
 

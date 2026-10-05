@@ -31,6 +31,20 @@ canvas{display:block;width:100%;height:auto}
 .legend{display:flex;flex-wrap:wrap;gap:4px 12px;font:11px var(--mono);color:var(--dim-case);margin-top:6px}
 .legend i{display:inline-block;width:10px;height:3px;margin-right:5px;vertical-align:middle}
 .note{font:12px var(--sans);color:var(--dim-case);margin-top:6px}
+.inside{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:12px}
+@media (max-width:1100px){.inside{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:600px){.inside{grid-template-columns:minmax(0,1fr)}}
+.wide{display:grid;gap:12px;grid-template-columns:minmax(0,2fr) minmax(0,3fr);margin-top:12px}
+@media (max-width:1000px){.wide{grid-template-columns:minmax(0,1fr)}}
+.section-title{font:italic 900 22px/1 "Archivo",var(--sans);font-stretch:125%;margin:22px 0 0;color:var(--ink-case)}
+.px{image-rendering:pixelated}
+.lr{display:grid;grid-template-columns:minmax(0,1fr) 8.5em minmax(0,1fr);gap:6px;align-items:center;font:11px var(--mono);color:var(--muted);padding:2px 0}
+.lr .l,.lr .r{height:11px;background:#0d0e10;border:1px solid #000;border-radius:2px;position:relative;overflow:hidden}
+.lr .l i,.lr .r i{position:absolute;top:0;bottom:0;-webkit-mask:repeating-linear-gradient(90deg,#000 0 5px,transparent 5px 7px);mask:repeating-linear-gradient(90deg,#000 0 5px,transparent 5px 7px)}
+.lr .l i{right:0;background:#5fb4d9}.lr .r i{left:0;background:#ff8a65}
+.lr span{text-align:center;color:var(--text)}
+.tbl{max-height:420px;overflow:auto}
+.filter{width:100%;margin-bottom:8px}
 </style></head><body>
 <header class="deck">
   <a class="logo" href="/">FLYBRAIN<small>EARS &amp; EYES · FB-166700</small></a>
@@ -78,6 +92,34 @@ canvas{display:block;width:100%;height:auto}
   </section>
  </div>
 </div>
+<h2 class="section-title">Inside the brain</h2>
+<div class="inside">
+ <section class="card"><h2><span>Retina</span><span>what the eyes get</span></h2>
+  <div class="screen" style="padding:4px"><canvas id="retina" class="px" width="160" height="90"></canvas></div>
+  <p class="note">The frame as the fly's eye model gets it: grey, 160 x 90.</p></section>
+ <section class="card"><h2><span>Left eye T4/T5</span><span id="nL"></span></h2>
+  <div class="screen" style="padding:4px"><canvas id="eyeL" width="320" height="220"></canvas></div>
+  <p class="note">Each dot is a motion detector at its place in the eye; colour = the direction it prefers, brightness = drive now.</p></section>
+ <section class="card"><h2><span>Right eye T4/T5</span><span id="nR"></span></h2>
+  <div class="screen" style="padding:4px"><canvas id="eyeR" width="320" height="220"></canvas></div>
+  <p class="note">Front of each eye toward the middle. Colour wheel: 0 = toward the front, 90 = up, 180 = toward the back, 270 = down.</p></section>
+ <section class="card"><h2><span>Ears and inputs</span></h2>
+  <div class="screen" style="padding:4px"><canvas id="inputs" width="320" height="220"></canvas></div>
+  <p class="note">Sound per frequency band into Johnston's organ; light, looming and motion per side.</p></section>
+</div>
+<div class="wide">
+ <section class="card"><h2><span>Left vs right</span><span>spikes vs rest</span></h2>
+  <div class="screen" id="lr"></div>
+  <p class="note">Each side of the same pathway: blue = left, orange = right.</p></section>
+ <section class="card"><h2><span>Spike raster</span><span>last 5 s, now at the right</span></h2>
+  <div class="screen" style="padding:4px"><canvas id="raster" width="900" height="400"></canvas></div>
+  <p class="note">Real neurons, 4 per group: a mark = that neuron fired in that frame.</p></section>
+</div>
+<section class="card" style="margin-top:12px"><h2><span>Every neuron group</span><span id="gcount"></span></h2>
+ <input type="text" class="filter" id="gfilter" placeholder="filter: e.g. wing, leg, PAM, descending" aria-label="filter groups">
+ <div class="screen tbl"><table id="gtable"><thead><tr><th>group</th><th class="n">at rest</th><th class="n">now</th><th class="n">change</th></tr></thead><tbody></tbody></table></div>
+ <p class="note">Spikes per neuron per second, sorted by how far each group is from rest right now.</p>
+</section>
 </div>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -87,7 +129,7 @@ const base = "/media/" + encodeURIComponent(name) + "/";
 const COLORS = { fear: "#ff5a5a", pleasure: "#6cf08a", distress: "#c792ff", excitement: "#ffb23e", desire: "#ff5ad2",
                  anger: "#ff7a2f", mood: "#3ed8ff", appetite: "#ffe14d" };
 const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
-let V, OFF, SPK, POS, idx = {}, last = -1, smooth = {};
+let V, OFF, SPK, POS, MOT, EYES, RAS, idx = {}, last = -1, smooth = {}, lastTable = 0;
 
 async function load() {
   V = await (await fetch(base + "view.json")).json();
@@ -95,6 +137,15 @@ async function load() {
   OFF = new Uint32Array(sb, 0, V.frames + 1);
   SPK = new Uint32Array(sb, (V.frames + 1) * 4);
   POS = new Int16Array(await (await fetch("/media/positions.bin")).arrayBuffer());
+  if (V.has_motion) {
+    MOT = new Uint8Array(await (await fetch(base + "motion.bin")).arrayBuffer());
+    EYES = await (await fetch("/media/eyes.json")).json();
+  }
+  if (V.raster_rows) {
+    RAS = new Uint8Array(await (await fetch(base + "raster.bin")).arrayBuffer());
+    $("raster").height = V.raster_rows.length * 11;          // room for every label
+  }
+  if (!V.ear) document.querySelectorAll(".inside .note, .wide .note").forEach((n) => (n.textContent = "Watch this video again to fill these panels (it was watched before they existed)."));
   V.names.forEach((n, i) => (idx[n] = i));
   $("title").textContent = name;
   $("meta").textContent = `${Math.round(V.seconds)} s from ${fmt(V.start)}${V.rewired ? " · scrambled brain" : ""}${V.sound ? "" : " · no sound"}`;
@@ -120,10 +171,14 @@ function prepare() {
   }
   $("states").innerHTML = V.states.map((s) => `<div class="st"><div class="lab"><b>${s}</b><small>${esc(V.state_source[s] || "")}</small></div>
     <div class="cbar"><i id="sb-${s}"></i></div><div class="v" id="sv-${s}">0</div></div>`).join("");
-  ACTIVE = V.states.filter((s) => ST[s].peak > 0.05);
-  const quiet = V.states.filter((s) => !ACTIVE.includes(s));
+  const CEIL = 0.9 / 0.02;                                 // spikes/s: firing on (nearly) every 20 ms step
+  SATURATED = V.states.filter((s) => V.rest[idx[s]] >= CEIL);
+  ACTIVE = V.states.filter((s) => ST[s].peak > 0.05 && !SATURATED.includes(s));
+  const quiet = V.states.filter((s) => !ACTIVE.includes(s) && !SATURATED.includes(s));
   $("tlegend").innerHTML = ACTIVE.map((s) => `<span><i style="background:${COLORS[s]}"></i>${s}</span>`).join("") +
+    (SATURATED.length ? `<span>saturated (always firing, can't change): ${SATURATED.join(", ")}</span>` : "") +
     (quiet.length ? `<span>no response: ${quiet.join(", ")}</span>` : "");
+  for (const s of SATURATED) { const el = document.querySelector(`#sb-${s}`); if (el) el.closest(".st").querySelector("small").textContent += " · saturated"; }
   const CH = [["ears (JO-A/B)", "ear JO-A/B", "#ff5a5a"], ["hearing relay", "WED", "#3ed8ff"], ["motion (T4/T5)", "T4/T5 (motion)", "#6cf08a"],
               ["looming (LPLC2)", "LPLC2 (looming)", "#ff5ad2"], ["walk (DNg100)", "walk", "#ffb23e"], ["escape (DNp01)", "escape", "#ff5a5a"],
               ["back up (MDN)", "back up", "#ffb23e"], ["groom (DNg11)", "groom", "#ffe14d"], ["song (pIP10)", "song", "#ff5ad2"]];
@@ -131,6 +186,7 @@ function prepare() {
   CHIPS = CH.filter((c) => idx[c[1]] !== undefined);
   drawTimeline();
   moments();
+  buildLR();
   // brain: every neuron as a faint dot
   const c = document.createElement("canvas"); c.width = c.height = 520;
   const g = c.getContext("2d"); g.fillStyle = "#151619"; g.fillRect(0, 0, 520, 520); g.fillStyle = "rgba(150,170,190,0.16)";
@@ -138,7 +194,7 @@ function prepare() {
   brainBase = c;
   glowC = document.createElement("canvas"); glowC.width = glowC.height = 520;
 }
-let CHIPS = [], glowC, ACTIVE = [];
+let CHIPS = [], glowC, ACTIVE = [], SATURATED = [];
 const MOMENT_MIN = 0.5;                                       // spikes per neuron per second above rest
 
 function drawTimeline(t = 0) {
@@ -261,6 +317,91 @@ function drawStates(i) {
   $("moodwhy").textContent = top ? `${V.state_source[top.s]} well above rest` : "no state far from rest";
 }
 
+// ---------------------------------------------------------------- inside the brain
+const rc = document.createElement("canvas"); rc.width = 160; rc.height = 90;
+function drawRetina() {
+  const v = $("v"); if (v.readyState < 2) return;
+  const g = rc.getContext("2d", { willReadFrequently: true });
+  g.drawImage(v, 0, 0, 160, 90);
+  const d = g.getImageData(0, 0, 160, 90);
+  for (let k = 0; k < d.data.length; k += 4) { const y = (d.data[k] + d.data[k + 1] + d.data[k + 2]) / 3; d.data[k] = d.data[k + 1] = d.data[k + 2] = y; }
+  $("retina").getContext("2d").putImageData(d, 0, 0);
+}
+function drawEyes(i) {
+  if (!MOT) return;
+  const n = V.eye_cells, row = MOT.subarray(i * n, (i + 1) * n);
+  for (const [id, left] of [["eyeL", 1], ["eyeR", 0]]) {
+    const c = $(id), g = c.getContext("2d"), W = c.width, H = c.height;
+    g.fillStyle = "#151619"; g.fillRect(0, 0, W, H);
+    let on = 0;
+    for (let k = 0; k < n; k++) {
+      if (EYES.left[k] !== left) continue;
+      const x = 8 + (left ? 1 - EYES.front[k] : EYES.front[k]) * (W - 16), y = 8 + (1 - EYES.up[k]) * (H - 16), d = row[k] / 255;
+      if (d > 0.02) { on++; g.fillStyle = `hsla(${EYES.hue[k]},85%,55%,${Math.min(1, 0.25 + d * 1.5)})`; g.fillRect(x - 1.5, y - 1.5, 3, 3); }
+      else { g.fillStyle = "#2c2e34"; g.fillRect(x - 0.5, y - 0.5, 1, 1); }
+    }
+    $(left ? "nL" : "nR").textContent = `${on.toLocaleString()} active`;
+  }
+}
+function eyeMean(i, left) { if (!MOT) return 0; const n = V.eye_cells; let a = 0, c = 0; for (let k = 0; k < n; k++) if (EYES.left[k] === left) { a += MOT[i * n + k]; c++; } return a / c / 255; }
+function drawInputs(i) {
+  const c = $("inputs"), g = c.getContext("2d"), W = c.width, H = c.height;
+  g.fillStyle = "#151619"; g.fillRect(0, 0, W, H);
+  if (!V.ear) return;
+  const ear = V.ear[i] || [], bw = (W - 20) / 8;
+  g.font = "10px IBM Plex Mono"; g.textAlign = "center";
+  ear.forEach((v, b) => { const h = Math.min(1, v) * 100; g.fillStyle = "#3ed8ff"; g.fillRect(10 + b * bw + 3, 112 - h, bw - 6, h);
+    g.fillStyle = "#8f897d"; g.fillText(V.bands[b] >= 1000 ? (V.bands[b] / 1000).toFixed(1) + "k" : V.bands[b], 10 + b * bw + bw / 2, 124); });
+  g.textAlign = "left"; g.fillStyle = "#8f897d"; g.fillText("ears (Hz)", 10, 10);
+  const lm = V.loom[i] || [0, 0];
+  const meters = [["light", V.light[i] || 0, "#ebe5d7"], ["looming L", lm[0] / 0.8, "#ff5ad2"], ["looming R", lm[1] / 0.8, "#ff5ad2"],
+                  ["motion L", Math.min(1, eyeMean(i, 1) * 8), "#6cf08a"], ["motion R", Math.min(1, eyeMean(i, 0) * 8), "#6cf08a"]];
+  meters.forEach(([lab, v, col], k) => { const y = 140 + k * 16; g.fillStyle = "#8f897d"; g.fillText(lab, 10, y + 6);
+    g.fillStyle = "#0d0e10"; g.fillRect(90, y, W - 100, 10); g.fillStyle = col; g.fillRect(90, y, (W - 100) * Math.max(0, Math.min(1, v)), 10); });
+}
+const PAIRS = [["eye motion", "T4/T5 L", "T4/T5 R"], ["looming", "LPLC2 L", "LPLC2 R"], ["ear", "ear L", "ear R"], ["hearing WED", "WED L", "WED R"],
+  ["descending", "descending L", "descending R"], ["turn command", "turn L", "turn R"], ["wing power", "wing power L", "wing power R"],
+  ["wing steer", "wing steer L", "wing steer R"], ["front leg", "leg front L", "leg front R"], ["middle leg", "leg middle L", "leg middle R"],
+  ["hind leg", "leg hind L", "leg hind R"], ["neck", "neck L", "neck R"]];
+let LRrows = [];
+function buildLR() {
+  LRrows = PAIRS.filter(([, a, b]) => idx[a] !== undefined && idx[b] !== undefined);
+  $("lr").innerHTML = LRrows.map(([lab, a, b], k) => `<div class="lr"><div class="l"><i id="lrl${k}"></i></div><span>${lab}</span><div class="r"><i id="lrr${k}"></i></div></div>`).join("");
+}
+function drawLR(i) {
+  LRrows.forEach(([, a, b], k) => {
+    const m = Math.max(SCALE[a], SCALE[b]);
+    const f = (n) => Math.max(0, Math.min(1, sm("lr" + n, V.rates[i][idx[n]] - V.rest[idx[n]], 0.3) / m));
+    $("lrl" + k).style.width = `${f(a) * 100}%`; $("lrr" + k).style.width = `${f(b) * 100}%`;
+  });
+}
+function drawRaster(i) {
+  if (!RAS) return;
+  const c = $("raster"), g = c.getContext("2d"), W = c.width, H = c.height, rows = V.raster_rows, R = rows.length, B = V.raster_bytes;
+  const left = 150, win = 5 * V.fps, cw = (W - left) / win, rh = H / R;
+  g.fillStyle = "#151619"; g.fillRect(0, 0, W, H);
+  g.font = "10px IBM Plex Mono"; g.textBaseline = "middle";
+  let prev = "";
+  rows.forEach((r, k) => { if (r !== prev) { const n = rows.filter((x) => x === r).length; g.fillStyle = "#8f897d";
+    g.fillText(r.length > 20 ? r.slice(0, 19) + "…" : r, 4, k * rh + rh * n / 2);
+    g.fillStyle = "#2b2c30"; g.fillRect(left, k * rh, W - left, 1); prev = r; } });
+  g.fillStyle = "#ebe5d7";
+  for (let f = Math.max(0, i - win + 1); f <= i; f++) {
+    const x = left + (win - 1 - (i - f)) * cw;
+    for (let k = 0; k < R; k++) if (RAS[f * B + (k >> 3)] & (128 >> (k & 7))) g.fillRect(x, k * rh + 0.5, Math.max(1.5, cw - 0.5), Math.max(1, rh - 1));
+  }
+  g.fillStyle = "#ff6a3d"; g.fillRect(W - 2, 0, 2, H);
+}
+function drawTable(i) {
+  const q = $("gfilter").value.trim().toLowerCase();
+  const rows = V.names.map((n, j) => ({ n, rest: V.rest[j], now: V.rates[i][j] })).filter((r) => !q || r.n.toLowerCase().includes(q));
+  rows.sort((a, b) => Math.abs(b.now - b.rest) - Math.abs(a.now - a.rest));
+  $("gcount").textContent = `${rows.length} of ${V.names.length}`;
+  $("gtable").tBodies[0].innerHTML = rows.map((r) => { const d = r.now - r.rest;
+    return `<tr><td>${esc(r.n)}</td><td class="n">${r.rest.toFixed(2)}</td><td class="n">${r.now.toFixed(2)}</td><td class="n" style="color:${d > 0 ? "var(--green)" : d < 0 ? "var(--bad)" : "var(--muted)"}">${d > 0 ? "+" : ""}${d.toFixed(2)}</td></tr>`; }).join("");
+}
+$("gfilter").addEventListener("input", () => drawTable(Math.max(0, last)));
+
 function loop(now) {
   const v = $("v"), t = v.currentTime || 0;
   const i = Math.min(V.frames - 1, Math.floor(t * V.fps));
@@ -269,9 +410,15 @@ function loop(now) {
     drawStates(i);
     for (const [, n] of CHIPS) $("ch-" + CSS.escape(n)).style.width = `${val(n, i) * 100}%`;
     drawTimeline(t);
+    drawEyes(i);
+    drawInputs(i);
+    drawLR(i);
+    drawRaster(i);
+    if (now - lastTable > 250) { drawTable(i); lastTable = now; }
     $("clock").textContent = fmt(V.start + t);
     last = i;
   }
+  drawRetina();
   drawBody(i, now / 1000);
   requestAnimationFrame(loop);
 }
