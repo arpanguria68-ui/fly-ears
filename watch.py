@@ -26,8 +26,9 @@ import numpy as np
 from flyears import audio, body, ear, listen, vision
 
 HERE = Path(__file__).resolve().parent
-FPS = 25
-STEPS_PER_FRAME = 2                      # 40 ms frames, 20 ms brain steps
+FPS = 25                                 # set per video in main(): 50 when the source has 50+ frames a second,
+STEPS_PER_FRAME = 2                      # so each 20 ms brain step gets its own frame; else 25 (40 ms = 2 steps)
+FULL = 10.0                              # spikes/neuron/s above rest that fills a meter (fixed, every video)
 REST_SETTLE, REST_MEASURE = 100, 100     # steps: 2 s to settle, then 2 s of rest measured
 VW, VH = 768, 432                        # the video in the output
 OUT_W, OUT_H = 1280, 720
@@ -70,6 +71,16 @@ def duration(src: Path) -> float:
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(src)],
                        capture_output=True, text=True)
     return float(r.stdout.strip() or 0)
+
+
+def source_fps(src: Path) -> float:
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate",
+                        "-of", "csv=p=0", str(src)], capture_output=True, text=True).stdout.strip()
+    try:
+        a, _, b = r.partition("/")
+        return float(a) / float(b or 1)
+    except (ValueError, ZeroDivisionError):
+        return 25.0
 
 
 def has_audio(src: Path) -> bool:
@@ -215,8 +226,9 @@ class Panel:
     LIST = ("ears (JO-A/B)", "ear JO-A/B"), ("auditory relay", "WED"), ("motion (T4/T5)", "T4/T5 (motion)"), \
         ("looming (LPLC2)", "LPLC2 (looming)"), ("descending neurons", "descending_neuron")
 
-    def __init__(self, brain, eyes, names, rates):
+    def __init__(self, brain, eyes, names, rates, rest):
         self.names = names
+        self.rest = rest
         base = np.zeros((OUT_H, OUT_W, 3), np.uint8)
         base[:] = CASE
         rect(base, 0, 0, OUT_W, 40, (37, 37, 40))
@@ -258,7 +270,7 @@ class Panel:
                 base[y + py, x + px] = (44, 46, 52)                 # every cell, dim: the eye's shape
                 del front
             self.eye_px = ex
-        self.scale = {k: max(np.quantile(rates[:, i], 0.98), 1e-6) for i, k in enumerate(names)}
+
 
     def draw(self, frame_rgb, i, rates_frame, spikes, motion, loom, env):
         img = self.base.copy()
@@ -283,7 +295,7 @@ class Panel:
         for r, (label, key) in enumerate(self.LIST):
             if key in self.names:
                 j = self.names.index(key)
-                meter(img, mx + 190, my + 14 + r * 25, mw - 204, 14, rates_frame[j] / self.scale[key],
+                meter(img, mx + 190, my + 14 + r * 25, mw - 204, 14, (rates_frame[j] - self.rest[j]) / FULL,
                       (RED, CYAN, GREEN, (255, 90, 210), AMBER)[r])
         for b in range(ear.N_BANDS):                       # what the ears get, low to high
             h = int(np.clip(env[b], 0, 1) * 110)
@@ -376,6 +388,7 @@ def save_view(out: Path, brain, sim, src: Path, start: float, seconds: float, so
             "frames": len(per), "names": names, "rest": [round(float(x), 4) for x in rest],
             "rates": [[round(float(x), 3) for x in row] for row in per], "loom": np.round(loom, 3).tolist(),
             "states": state_rows, "state_source": body.STATE_SOURCE, "neurons": int(brain.n),
+            "sizes": [int(len(x)) for x in recorded_groups(brain, eyes).values()],
             "ear": np.round(env_frames, 3).tolist(), "bands": np.round(ear.BAND_EDGES).astype(int).tolist(),
             "light": np.round(extra["light"], 3).tolist(), "has_motion": bool(eyes.has_motion),
             "eye_cells": int(len(eyes.cells)) if eyes.has_motion else 0,
@@ -396,7 +409,10 @@ def main() -> None:
     p.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     p.add_argument("--out", default=None, help="output folder (default out/watch/<name>)")
     a = p.parse_args()
+    global FPS, STEPS_PER_FRAME
     src = fetch(a.source, HERE / "out" / "watch" / "downloads")
+    FPS = 50 if source_fps(src) >= 48 else 25       # a real frame for every 20 ms step when the video has one
+    STEPS_PER_FRAME = 50 // FPS
     total = duration(src)
     seconds = max(0.5, min(a.seconds, total - a.start)) if total else a.seconds
     whole = a.start == 0 and (not total or seconds >= total - 0.5)
@@ -412,10 +428,11 @@ def main() -> None:
     need = len(frames) * STEPS_PER_FRAME
     env = np.vstack([env, np.zeros((max(0, need - len(env)), ear.N_BANDS), np.float32)])[:need]
     brain = listen.make_brain(1, a.device, rewired=a.rewired)
-    eyes = vision.Eyes(brain)
+    eyes = vision.Eyes(brain, fps=FPS)
     if not eyes.has_motion:
         log("  (no columns.npz in the fly data: motion detectors off, photoreceptors and looming only)")
-    log(f"  {len(frames)} frames, sound: {'yes' if hear else 'no'}, brain on {brain.device}")
+    log(f"  {len(frames)} frames at {FPS} fps ({1000 // FPS} ms each = {STEPS_PER_FRAME} brain step"
+        f"{'s' if STEPS_PER_FRAME > 1 else ''}), sound: {'yes' if hear else 'no'}, brain on {brain.device}")
     sim = simulate(brain, eyes, frames, env, hear)
     names, rates, rest = sim[0], sim[1], sim[2]
     header = "time_s," + ",".join(n.replace(",", " ") for n in names) + ",loom_L,loom_R," + \
@@ -435,7 +452,7 @@ def main() -> None:
         log(f"    {r['group']:22s} {r['rest']:7.3f} -> {r['watching']:7.3f}  ({r['change']:+.3f})")
     env_frames = env.reshape(-1, STEPS_PER_FRAME, ear.N_BANDS).mean(1)
     save_view(out, brain, sim, src, a.start, seconds, a.source, a.rewired, hear, env_frames, eyes)
-    panel = Panel(brain, eyes, names, rates)
+    panel = Panel(brain, eyes, names, rates, rest)
     log("  drawing the video...")
     part = out / "fly_watching.part.mp4"              # finished videos only: a stop mid-way leaves no broken file
     render(src, a.start, seconds, part, panel, sim[:6], env_frames, src.stem, a.rewired, sound=has_audio(src))

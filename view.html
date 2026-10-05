@@ -44,6 +44,9 @@ canvas{display:block;width:100%;height:auto}
 .lr .l i{right:0;background:#5fb4d9}.lr .r i{left:0;background:#ff8a65}
 .lr span{text-align:center;color:var(--text)}
 .tbl{max-height:420px;overflow:auto}
+.honest{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;font:13px/1.5 var(--sans);color:var(--ink-case)}
+@media (max-width:900px){.honest{grid-template-columns:minmax(0,1fr)}}
+.honest b{display:block;font:400 10px var(--label);letter-spacing:.1em;text-transform:uppercase;color:var(--nes);margin-bottom:4px}
 .filter{width:100%;margin-bottom:8px}
 </style></head><body>
 <header class="deck">
@@ -85,21 +88,36 @@ canvas{display:block;width:100%;height:auto}
   <section class="card"><h2><span>Emotions now</span><span>vs rest</span></h2>
    <div class="now"><b id="mood">calm</b><span id="moodwhy"></span></div>
    <div class="screen" id="states"></div>
-   <p class="note">Each "emotion" is the spike rate of a population that carries that internal state in real flies (named under each word), compared with the same brain at rest. A readout of this model, not a measured feeling.</p>
+   <p class="note">Each "emotion" is the spike rate of a population that carries that internal state in real flies (named under each word), against the same brain at rest; bars full at +-5 spikes/neuron/s, named at +1 or more. A readout of this model, not a measured feeling.</p>
   </section>
   <section class="card"><h2><span>Senses and commands</span></h2>
    <div class="screen chips" id="chips"></div>
   </section>
  </div>
 </div>
+<section class="card" style="margin-top:12px"><h2><span>How to read this page</span><span>what is measured, what is modelled</span></h2>
+ <div class="honest">
+  <div><b>Measured from the simulation</b> (every number, spike, raster mark and bar): the spiking of the real
+  MaleCNS wiring, 166,700 neurons, one 20 ms step at a time, in the video's own time. <code>audit.py</code> re-runs it
+  and gets the same numbers step for step; a blank grey view in silence stays at rest.</div>
+  <div><b>Modelled by this program, then injected</b> (the fly's eyes and ears are not simulated cell by cell):
+  motion is optical flow computed from the frames and put into T4/T5 cells along their preferred direction;
+  looming is our four-way expansion detector put into LPLC2; photoreceptors get only the brightness per eye
+  column; the ears get 8 frequency bands, JO-B low and JO-A high (an assumption). The connectome takes it from there.</div>
+  <div><b>Drawn, not simulated</b>: the fly's body is a picture posed by its motor neurons (no muscles or physics,
+  no wingbeat: real wings beat 200 times a second); "emotion" words name populations, not feelings.
+  Scales are fixed for every video: a full bar = +10 spikes/neuron/s, an emotion bar = +-5,
+  and a state is named only at +1 or more. Brain map: up to 3,000 of the spikes each frame.</div>
+ </div>
+</section>
 <h2 class="section-title">Inside the brain</h2>
 <div class="inside">
  <section class="card"><h2><span>Retina</span><span>what the eyes get</span></h2>
   <div class="screen" style="padding:4px"><canvas id="retina" class="px" width="160" height="90"></canvas></div>
-  <p class="note">The frame as the fly's eye model gets it: grey, 160 x 90.</p></section>
+  <p class="note">The grey 160 x 90 picture our motion and looming detectors work on. The photoreceptors themselves get only the brightness of each eye column.</p></section>
  <section class="card"><h2><span>Left eye T4/T5</span><span id="nL"></span></h2>
   <div class="screen" style="padding:4px"><canvas id="eyeL" width="320" height="220"></canvas></div>
-  <p class="note">Each dot is a motion detector at its place in the eye; colour = the direction it prefers, brightness = drive now.</p></section>
+  <p class="note">Each dot is a T4/T5 cell at its place in the eye; colour = the direction it prefers, brightness = the motion drive injected into it now (from optical flow).</p></section>
  <section class="card"><h2><span>Right eye T4/T5</span><span id="nR"></span></h2>
   <div class="screen" style="padding:4px"><canvas id="eyeR" width="320" height="220"></canvas></div>
   <p class="note">Front of each eye toward the middle. Colour wheel: 0 = toward the front, 90 = up, 180 = toward the back, 270 = down.</p></section>
@@ -159,21 +177,19 @@ const col = (n) => (idx[n] === undefined ? null : V.rates.map((r) => r[idx[n]]))
 function q(arr, p) { const s = [...arr].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; }
 let SCALE = {}, ST = {}, brainBase;
 function prepare() {
-  for (const n of V.names) {
-    const c = col(n), rest = V.rest[idx[n]];
-    SCALE[n] = Math.max(q(c, 0.98) - rest, 1e-3);
-  }
+  for (const n of V.names) SCALE[n] = FULL;
   for (const s of V.states) {                         // change vs rest, smoothed over 0.4 s
     const c = col(s), rest = V.rest[idx[s]], k = 12;            // +-0.5 s
     const raw = c.map((x) => x - rest);
     ST[s] = raw.map((_, i) => { let a = 0, n = 0; for (let j = Math.max(0, i - k); j <= Math.min(raw.length - 1, i + k); j++) { a += raw[j]; n++; } return a / n; });
-    ST[s].peak = Math.max(...ST[s].map(Math.abs), 1e-3);
+    ST[s].peak = Math.max(...ST[s].map(Math.abs), 1e-3);     // (only to find the moments)
   }
-  $("states").innerHTML = V.states.map((s) => `<div class="st"><div class="lab"><b>${s}</b><small>${esc(V.state_source[s] || "")}</small></div>
+  const size = (s) => (V.sizes ? V.sizes[idx[s]] : null);
+  $("states").innerHTML = V.states.map((s) => `<div class="st"><div class="lab"><b>${s}</b><small>${esc(V.state_source[s] || "")}${size(s) ? ` · ${size(s)} neurons${size(s) < 10 ? ", noisy" : ""}` : ""}</small></div>
     <div class="cbar"><i id="sb-${s}"></i></div><div class="v" id="sv-${s}">0</div></div>`).join("");
   const CEIL = 0.9 / 0.02;                                 // spikes/s: firing on (nearly) every 20 ms step
   SATURATED = V.states.filter((s) => V.rest[idx[s]] >= CEIL);
-  ACTIVE = V.states.filter((s) => ST[s].peak > 0.05 && !SATURATED.includes(s));
+  ACTIVE = V.states.filter((s) => !SATURATED.includes(s));
   const quiet = V.states.filter((s) => !ACTIVE.includes(s) && !SATURATED.includes(s));
   $("tlegend").innerHTML = ACTIVE.map((s) => `<span><i style="background:${COLORS[s]}"></i>${s}</span>`).join("") +
     (SATURATED.length ? `<span>saturated (always firing, can't change): ${SATURATED.join(", ")}</span>` : "") +
@@ -195,6 +211,9 @@ function prepare() {
   glowC = document.createElement("canvas"); glowC.width = glowC.height = 520;
 }
 let CHIPS = [], glowC, ACTIVE = [], SATURATED = [];
+// Fixed scales, the same for every video (never fitted to the clip): a full bar is this many spikes per
+// neuron per second above rest; an emotion bar is full at +-STATE_FULL; a state is named only above STATE_NAME.
+const FULL = 10, STATE_FULL = 5, STATE_NAME = 1.0;
 const MOMENT_MIN = 0.5;                                       // spikes per neuron per second above rest
 
 function drawTimeline(t = 0) {
@@ -207,11 +226,12 @@ function drawTimeline(t = 0) {
     g.fillStyle = "#8f897d"; g.fillText(s, 6, mid);
     g.strokeStyle = "#2b2c30"; g.beginPath(); g.moveTo(labelW, mid); g.lineTo(W, mid); g.stroke();
     g.beginPath(); g.moveTo(labelW, mid);
-    y.forEach((v, i) => g.lineTo(labelW + (i / (n - 1)) * (W - labelW), mid - (v / y.peak) * amp));
+    y.forEach((v, i) => g.lineTo(labelW + (i / (n - 1)) * (W - labelW), mid - Math.max(-1, Math.min(1, v / STATE_FULL)) * amp));
     g.lineTo(W, mid); g.closePath();
     g.globalAlpha = 0.55; g.fillStyle = col; g.fill(); g.globalAlpha = 1;
   });
   g.fillStyle = "#ebe5d7"; g.fillRect(labelW + (t / V.seconds) * (W - labelW) - 1, 0, 2, H);
+  g.fillStyle = "#8f897d"; g.textAlign = "right"; g.fillText(`each lane: +-5 spikes/neuron/s around rest`, W - 6, H - 8); g.textAlign = "left";
 }
 $("tl").onclick = (e) => { const r = e.target.getBoundingClientRect(), x0 = 92 / 1200 * r.width;
   $("v").currentTime = Math.max(0, (e.clientX - r.left - x0) / (r.width - x0)) * V.seconds; $("v").play(); };
@@ -257,8 +277,7 @@ function drawBody(i, t) {
   const DIM = [70, 72, 80];
   // wings: folded back at rest, spread and beating with flight-muscle output
   for (const [s, power, steer] of [[-1, wingL, stL], [1, wingR, stR]]) {
-    const spread = power * 0.9, beat = Math.sin(t * 38) * power * 0.35;
-    const ang = Math.PI / 2 + s * (0.35 + spread + beat);
+    const ang = Math.PI / 2 + s * (0.35 + power * 0.9);          // spread = flight motor neuron activity
     g.save(); g.translate(cx + s * 34, cy - 18); g.rotate(-ang + Math.PI / 2);
     g.fillStyle = `rgba(${150 + 105 * steer},${190 - 40 * steer},${220 - 150 * steer},${0.18 + 0.45 * power})`;
     g.strokeStyle = `rgba(200,210,225,${0.35 + 0.5 * power})`; g.lineWidth = 1.5;
@@ -267,8 +286,8 @@ function drawBody(i, t) {
   // legs: 3 per side, each stepping and lighting with its own motor neurons
   const legs = [["front", -46, -0.7], ["middle", -6, 0.0], ["hind", 30, 0.6]];
   for (const s of [-1, 1]) for (const [part, dy, sweep] of legs) {
-    const v = p(`leg ${part} ${s < 0 ? "L" : "R"}`), ph = t * 14 + (part === "middle" ? Math.PI : 0) + (s < 0 ? 0 : Math.PI);
-    const swing = Math.sin(ph) * v * 0.45;
+    const v = p(`leg ${part} ${s < 0 ? "L" : "R"}`);
+    const swing = v * 0.35;                                        // pulled forward with its motor neurons
     const a1 = (s < 0 ? Math.PI : 0) + s * (sweep + swing) * -1;
     const x0 = cx + s * 30, y0 = cy + dy, x1 = x0 + Math.cos(a1) * 70, y1 = y0 + Math.sin(a1) * 70 * 0.9;
     const a2 = a1 + s * (part === "front" ? -0.9 : part === "hind" ? 0.9 : 0.4);
@@ -294,9 +313,9 @@ function drawBody(i, t) {
     g.beginPath(); g.arc(cx, cy - 20, 150, -Math.PI / 2, -Math.PI / 2 + (turn > 0 ? -0.6 : 0.6), turn > 0); g.stroke();
     g.font = "600 14px IBM Plex Mono"; g.fillStyle = "#ffb23e"; g.textAlign = turn > 0 ? "right" : "left"; g.fillText(turn > 0 ? "turn left" : "turn right", cx + (turn > 0 ? -95 : 95), cy - 150); g.globalAlpha = 1; }
   const e = Math.max(esc_, jump);
-  if (e > 0.15) { g.strokeStyle = `rgba(255,90,90,${Math.min(1, e)})`; g.lineWidth = 4; g.beginPath(); g.arc(cx, cy, 210 - 20 * Math.sin(t * 20), 0, Math.PI * 2); g.stroke();
+  if (e > 0.15) { g.strokeStyle = `rgba(255,90,90,${Math.min(1, e)})`; g.lineWidth = 4; g.beginPath(); g.arc(cx, cy, 210, 0, Math.PI * 2); g.stroke();
     g.font = "800 18px IBM Plex Mono"; g.fillStyle = "#ff5a5a"; g.textAlign = "center"; g.fillText("ESCAPE", cx, 28); }
-  if (song > 0.2) { g.font = "26px serif"; g.fillStyle = `rgba(255,90,210,${song})`; g.textAlign = "center"; g.fillText("♪", cx + 120, cy - 40 - 10 * Math.sin(t * 6)); }
+  if (song > 0.2) { g.font = "26px serif"; g.fillStyle = `rgba(255,90,210,${song})`; g.textAlign = "center"; g.fillText("♪", cx + 120, cy - 40); }
   if (groom > 0.2) { g.font = "600 13px IBM Plex Mono"; g.fillStyle = `rgba(255,225,77,${groom})`; g.textAlign = "center"; g.fillText("grooming", cx, cy - 130); }
   const acts = [["walking", walk], ["backing up", back], ["escaping", e], ["flying", (wingL + wingR) / 2], ["grooming", groom], ["singing", song]].filter((a) => a[1] > 0.25).sort((a, b) => b[1] - a[1]);
   $("act").textContent = acts.length ? acts.slice(0, 2).map((a) => a[0]).join(" · ") : "resting";
@@ -305,16 +324,17 @@ function drawBody(i, t) {
 function drawStates(i) {
   let top = null;
   for (const s of V.states) {
-    const raw = V.rates[i][idx[s]] - V.rest[idx[s]], x = sm("st-" + s, raw, 0.25), k = Math.max(-1, Math.min(1, x / ST[s].peak));
+    const raw = V.rates[i][idx[s]] - V.rest[idx[s]], x = sm("st-" + s, raw, 0.25), k = Math.max(-1, Math.min(1, x / STATE_FULL));
     const b = $("sb-" + s);
     b.style.background = COLORS[s];
     b.style.left = k >= 0 ? "50%" : `${50 + k * 50}%`; b.style.width = `${Math.abs(k) * 50}%`;
     $("sv-" + s).textContent = (x >= 0 ? "+" : "") + x.toFixed(2);
-    if (k > 0.35 && (!top || k > top.k)) top = { s, k };
+    if (!SATURATED.includes(s) && x >= STATE_NAME && (!top || x > top.x)) top = { s, k, x };
   }
   $("mood").textContent = top ? top.s : "calm";
   $("mood").style.color = top ? COLORS[top.s] : "var(--ink-case)";
-  $("moodwhy").textContent = top ? `${V.state_source[top.s]} well above rest` : "no state far from rest";
+  const n = top && V.sizes ? V.sizes[idx[top.s]] : null;
+  $("moodwhy").textContent = top ? `${V.state_source[top.s]}${n ? ` (${n} neurons${n < 10 ? ": few, so noisy" : ""})` : ""}: +${top.x.toFixed(1)} spikes/neuron/s above rest` : `no state ${STATE_NAME}+ spikes/neuron/s above rest`;
 }
 
 // ---------------------------------------------------------------- inside the brain

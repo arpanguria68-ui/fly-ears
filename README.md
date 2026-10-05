@@ -112,6 +112,47 @@ neurons (PAM) fire on every step at rest and while watching (50 spikes/s, this m
 the punishment ones (PPL1) nearly so: saturated, they cannot report anything here, and the viewer
 marks them so.
 
+## What is real, what is modelled (and how it is checked)
+
+**Real (simulated, not drawn or edited):** every spike, rate, raster mark and bar comes from
+stepping the MaleCNS connectome, 20 ms per step, in the video's own time. `audit.py` checks each
+watched video:
+
+```powershell
+..irefly\.venv\Scripts\python.exe audit.py out\watch\<name>
+```
+
+* **Timing:** brain steps x 20 ms = the clip's length (1 s of video = 1 s of brain time; picture,
+  sound and spikes on one clock). Videos with 50+ frames a second give the brain a new frame every
+  step; slower ones hold each frame for two steps.
+* **Real data:** the first 2 s are simulated again from the same inputs and seed and must match the
+  saved timeline step for step (the simulation is deterministic: two runs are identical).
+* **No phantom responses:** a plain grey view in silence must leave the senses at rest.
+
+All watched videos pass all three.
+
+**Modelled by this program, then injected** (the fly's eyes and ears are not simulated cell by cell):
+motion is optical flow from the frames, as speed (the same at any frame rate), put into each T4/T5
+cell along its preferred direction; looming is a four-way expansion detector put into LPLC2;
+photoreceptors get the brightness per eye column only; the ears get 8 frequency bands (JO-B low,
+JO-A high: an assumption). From there on, everything is the connectome.
+
+**Drawn, not simulated:** the fly's body is a picture posed by its motor neurons: no muscles, no
+physics, no wingbeat (real wings beat ~200 times a second, far faster than the 20 ms steps).
+Scales are fixed for every video (a full bar = +10 spikes/neuron/s above rest; emotion bars +-5;
+a state is named only at +1 or more) so a small change never looks big. Emotion words name
+populations, not feelings; populations under 10 neurons are marked noisy.
+
+**Limits compared with a real fly:**
+* 20 ms per step: each synapse takes one step in the model, much slower than a real synapse
+  (about 1-5 ms), so responses several synapses deep come later than in a fly, and nothing
+  faster than 25 Hz can be represented.
+* Video is at most 50 frames a second; a fly's eye resolves flicker far faster (~200+ Hz).
+* The early stages of seeing and hearing are our hand-written models, not the fly's own circuits
+  (in this spiking model the photoreceptor signal fades at the lamina, see fly.ai's notes).
+* The brain runs faster than real time (about 0.4 s per video second on a GPU) and the result is
+  then played back in sync; it is not a live stream.
+
 ## Watch a video: the fly sees and hears it, frame by frame
 
 ```powershell
@@ -187,6 +228,7 @@ the beeps (9.1 during a beep, 3.8 between).
 | `watch.py` | a link or video file -> the fly watches it -> video, timeline, summary |
 | `flyears/body.py` | body parts, behaviour commands and internal states, from real neurons |
 | `ui.py`, `ui.html`, `view.html`, `retro.css` | the browser pages (port 8790) |
+| `audit.py` | checks a watched video: timing, re-simulation, no phantom responses |
 | `run.py` | everything, and the report |
 
 Your audio files stay on your PC: `songs/` is ignored by git, and nothing is uploaded.

@@ -22,8 +22,9 @@ import numpy as np
 from scipy import ndimage
 
 FLOW_W, FLOW_H = 160, 90          # the frame size flow is measured at
-MOTION_GAIN = 0.4                 # volts per pixel/frame of preferred-direction motion
-LOOM_GAIN = 1.5                   # volts per pixel/frame of four-way outward motion (fast approach -> cap)
+MOTION_GAIN = 0.4                 # volts per pixel per 40 ms (10 px/s) of preferred-direction motion
+LOOM_GAIN = 1.5                   # volts per pixel per 40 ms of four-way outward motion (fast approach -> cap)
+REF_FPS = 25                      # the gains are set for 25 frames a second; other rates are scaled to the same speed
 CAP = 0.8                         # most extra voltage per step on any cell (as the ear)
 POLARITY_FLOOR = 0.3              # T4 still answers dark edges weakly, T5 bright ones
 LEVELS = 16                       # drive levels used to inject cell-by-cell drive (see level_sets)
@@ -61,8 +62,9 @@ def flow(prev: np.ndarray, cur: np.ndarray, sigma: float = 3.0) -> tuple[np.ndar
 
 
 class Eyes:
-    def __init__(self, brain, cols: dict | None = None):
+    def __init__(self, brain, cols: dict | None = None, fps: float = REF_FPS):
         self.brain = brain
+        self.speed = fps / REF_FPS                     # pixels/frame -> the same speed whatever the frame rate
         cols = cols if cols is not None else load_columns()
         self.has_motion = cols is not None
         if self.has_motion:
@@ -95,6 +97,7 @@ class Eyes:
         inject = []
         if self.prev is not None:
             u, v, It = flow(self.prev, frame)
+            u, v = u * self.speed, v * self.speed
             if self.has_motion:
                 fu, fv = u[self.py, self.px], v[self.py, self.px]
                 front, upw = fu * self.sign, -fv

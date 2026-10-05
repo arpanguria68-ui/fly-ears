@@ -232,3 +232,15 @@ def test_legs_split_front_middle_hind_by_position():
     assert len(g["leg front L"]) == 4 and len(g["leg hind R"]) == 4
     assert np.all(fake.positions[g["leg front L"], 2] < 150)          # nearest the brain = front
     assert "pleasure" in g and "distress" in g and "fear" in g
+
+
+def test_same_speed_same_drive_at_any_frame_rate():
+    """2 px per 40 ms at 25 fps and 1 px per 20 ms at 50 fps are the same motion: same drive."""
+    tex = _texture(2)
+    out = []
+    for fps, step in ((25, 2), (50, 1)):
+        eyes = vision.Eyes(_fake_eye_brain(), _cols(), fps=fps)
+        eyes.see(tex[10:10 + vision.FLOW_H, 10:10 + vision.FLOW_W])
+        eyes.see(tex[10:10 + vision.FLOW_H, 10 - step:10 - step + vision.FLOW_W])
+        out.append(eyes.last["motion"].copy())
+    assert np.allclose(out[0], out[1], rtol=0.25, atol=0.02)
