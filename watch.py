@@ -342,13 +342,13 @@ def main() -> None:
                comments="", fmt="%.4g")
     mean = rates.mean(0)
     summary = sorted(({"group": n, "rest": float(rest[j]), "watching": float(mean[j]),
-                       "ratio": float((mean[j] + 1e-3) / (rest[j] + 1e-3))} for j, n in enumerate(names)),
-                     key=lambda r: -r["ratio"])
+                       "change": float(mean[j] - rest[j])} for j, n in enumerate(names)),
+                     key=lambda r: -abs(r["change"]))
     (out / "summary.json").write_text(json.dumps({"source": a.source, "start": a.start, "seconds": seconds,
                                                   "rewired": a.rewired, "sound": hear, "groups": summary}, indent=1))
-    log("  strongest responses (spikes/neuron/s while watching vs at rest):")
+    log("  biggest changes (spikes per neuron per second, at rest -> while watching):")
     for r in summary[:8]:
-        log(f"    {r['group']:22s} {r['rest']:7.3f} -> {r['watching']:7.3f}  ({r['ratio']:.1f}x)")
+        log(f"    {r['group']:22s} {r['rest']:7.3f} -> {r['watching']:7.3f}  ({r['change']:+.3f})")
     panel = Panel(brain, eyes, names, rates)
     env_frames = env.reshape(-1, STEPS_PER_FRAME, ear.N_BANDS).mean(1)
     log("  drawing the video...")
