@@ -217,6 +217,13 @@ class Handler(BaseHTTPRequestHandler):
                    "--seconds", str(float(body.get("seconds") or 60))]
             if body.get("rewired"):
                 cmd.append("--rewired")
+            if body.get("stim"):
+                from flyears import senses
+                try:
+                    senses.parse_schedule(str(body["stim"]))
+                except ValueError as e:
+                    return self._json({"ok": False, "error": str(e)}, 400)
+                cmd += ["--stim", str(body["stim"])]
             ok = JOB.start("watch", cmd)
             return self._json({"ok": ok, "error": None if ok else "the fly is busy with another job"}, 200 if ok else 409)
         if url.path == "/music":

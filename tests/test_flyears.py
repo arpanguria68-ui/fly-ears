@@ -244,3 +244,40 @@ def test_same_speed_same_drive_at_any_frame_rate():
         eyes.see(tex[10:10 + vision.FLOW_H, 10 - step:10 - step + vision.FLOW_W])
         out.append(eyes.last["motion"].copy())
     assert np.allclose(out[0], out[1], rtol=0.25, atol=0.02)
+
+
+# ---------------------------------------------------------------- more senses
+from flyears import senses  # noqa: E402
+
+
+def test_schedule_parsing():
+    assert senses.parse_schedule("vinegar:5-15, heat:20-30.5") == [("vinegar", 5.0, 15.0), ("heat", 20.0, 30.5)]
+    assert senses.parse_schedule("") == []
+    for bad in ("perfume:1-2", "vinegar:5-3", "vinegar 5-10"):
+        try:
+            senses.parse_schedule(bad)
+        except ValueError:
+            continue
+        raise AssertionError(bad)
+
+
+def test_colour_goes_to_the_right_photoreceptors():
+    types = np.array(["R1-6", "R7", "R8"] * 2)
+    fake = SimpleNamespace(visual=np.arange(6), cell_type=types, azimuth=np.array([-1, -1, -1, 1, 1, 1.0]))
+    eyes = senses.ColourEyes(fake, 10)
+    rgb = np.zeros((4, 10, 3), np.uint8)
+    rgb[:, :5, 1] = 255                                            # green on the left
+    rgb[:, 5:, 2] = 255                                            # blue on the right
+    d = eyes.drive(rgb)
+    assert d[2] == 1.0 and d[1] == 0.0                             # left: R8 (green) yes, R7 (blue) no
+    assert d[4] == 1.0 and d[5] == 0.0                             # right: R7 (blue) yes, R8 no
+    assert abs(d[0] - 1 / 3) < 0.01                                # R1-6: brightness
+
+
+def test_stimuli_only_while_scheduled():
+    ct = np.array(["ORN_VL2a"] * 3 + ["TRN_VP2"] * 2 + ["X"])
+    fake = SimpleNamespace(cell_type=ct, side=np.array(["L"] * 6))
+    st = senses.Stimuli(fake, [("vinegar", 1.0, 2.0)])
+    assert st.at(0.5) == [] and st.on(1.5) == ["vinegar"]
+    (idx, v), = st.at(1.5)
+    assert list(idx) == [0, 1, 2] and v == senses.STRENGTH

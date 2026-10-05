@@ -46,6 +46,13 @@ canvas{display:block;width:100%;height:auto}
 .tbl{max-height:420px;overflow:auto}
 .honest{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;font:13px/1.5 var(--sans);color:var(--ink-case)}
 @media (max-width:900px){.honest{grid-template-columns:minmax(0,1fr)}}
+.sense{display:grid;grid-template-columns:1.2em 7.5em minmax(0,1fr) 4.2em;gap:6px;align-items:center;font:11px var(--mono);color:var(--muted);padding:2px 0}
+.sense .lamp2{width:9px;height:9px;border-radius:50%;background:#401c1a;box-shadow:inset 0 1px 1px #000}
+.sense .lamp2.on{background:var(--led);box-shadow:0 0 6px var(--led)}
+.sense b{font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sense .v{text-align:right;color:var(--text)}
+.sense .bar{height:10px}
+.flag{font:12px var(--sans);color:#f0c02f;margin-top:6px}
 .honest b{display:block;font:400 10px var(--label);letter-spacing:.1em;text-transform:uppercase;color:var(--nes);margin-bottom:4px}
 .filter{width:100%;margin-bottom:8px}
 </style></head><body>
@@ -125,6 +132,22 @@ canvas{display:block;width:100%;height:auto}
   <div class="screen" style="padding:4px"><canvas id="inputs" width="320" height="220"></canvas></div>
   <p class="note">Sound per frequency band into Johnston's organ; light, looming and motion per side.</p></section>
 </div>
+<h2 class="section-title">What else a real fly has</h2>
+<div class="inside">
+ <section class="card"><h2><span>Senses</span><span>stimulus on = red light</span></h2>
+  <div class="screen" id="senses"></div>
+  <p class="note">Spikes per receptor neuron per second. Smell, taste, wind, temperature, humidity and touch are given on the Watch page's schedule; colour comes from the video (R7 mostly sees ultraviolet, which video has none of: blue stands in).</p></section>
+ <section class="card"><h2><span>Smell and memory</span></h2>
+  <div class="screen" id="smell"></div>
+  <div class="flag" id="kcflag"></div>
+  <p class="note">Receptors -> projection neurons -> mushroom body (Kenyon cells, the learning centre) and lateral horn (innate) -> memory output neurons.</p></section>
+ <section class="card"><h2><span>Compass</span><span>central complex</span></h2>
+  <div class="screen" style="padding:4px"><canvas id="compass" width="320" height="260"></canvas></div>
+  <p class="note">The 50 EPG neurons of the ellipsoid body ring, at their real places around it; lit = fired this frame. Their bump is the fly's sense of heading.</p></section>
+ <section class="card"><h2><span>Clock and hunger</span></h2>
+  <div class="screen" id="clockpanel"></div>
+  <p class="note">Circadian clock neurons (LNv, LNd, DN1) and the insulin-producing cells (fed state).</p></section>
+</div>
 <div class="wide">
  <section class="card"><h2><span>Left vs right</span><span>spikes vs rest</span></h2>
   <div class="screen" id="lr"></div>
@@ -147,7 +170,7 @@ const base = "/media/" + encodeURIComponent(name) + "/";
 const COLORS = { fear: "#ff5a5a", pleasure: "#6cf08a", distress: "#c792ff", excitement: "#ffb23e", desire: "#ff5ad2",
                  anger: "#ff7a2f", mood: "#3ed8ff", appetite: "#ffe14d" };
 const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
-let V, OFF, SPK, POS, MOT, EYES, RAS, idx = {}, last = -1, smooth = {}, lastTable = 0;
+let V, OFF, SPK, POS, MOT, EYES, RAS, EPG, idx = {}, last = -1, smooth = {}, lastTable = 0;
 
 async function load() {
   V = await (await fetch(base + "view.json")).json();
@@ -159,6 +182,7 @@ async function load() {
     MOT = new Uint8Array(await (await fetch(base + "motion.bin")).arrayBuffer());
     EYES = await (await fetch("/media/eyes.json")).json();
   }
+  if (V.epg_angle && V.epg_angle.length) EPG = new Uint8Array(await (await fetch(base + "compass.bin")).arrayBuffer());
   if (V.raster_rows) {
     RAS = new Uint8Array(await (await fetch(base + "raster.bin")).arrayBuffer());
     $("raster").height = V.raster_rows.length * 11;          // room for every label
@@ -203,6 +227,7 @@ function prepare() {
   drawTimeline();
   moments();
   buildLR();
+  SENSES_OK = buildSenses();
   // brain: every neuron as a faint dot
   const c = document.createElement("canvas"); c.width = c.height = 520;
   const g = c.getContext("2d"); g.fillStyle = "#151619"; g.fillRect(0, 0, 520, 520); g.fillStyle = "rgba(150,170,190,0.16)";
@@ -230,6 +255,7 @@ function drawTimeline(t = 0) {
     g.lineTo(W, mid); g.closePath();
     g.globalAlpha = 0.55; g.fillStyle = col; g.fill(); g.globalAlpha = 1;
   });
+  drawStimStrip(g, W, labelW, t);
   g.fillStyle = "#ebe5d7"; g.fillRect(labelW + (t / V.seconds) * (W - labelW) - 1, 0, 2, H);
   g.fillStyle = "#8f897d"; g.textAlign = "right"; g.fillText(`each lane: +-5 spikes/neuron/s around rest`, W - 6, H - 8); g.textAlign = "left";
 }
@@ -422,6 +448,70 @@ function drawTable(i) {
 }
 $("gfilter").addEventListener("input", () => drawTable(Math.max(0, last)));
 
+// ---------------------------------------------------------------- what else a real fly has
+const sid = (n) => n.replace(/[^a-z0-9]/gi, "_");
+const SENSE_ROWS = [["fruit", "smell"], ["vinegar", "smell"], ["mould", "smell"], ["CO2", "smell"], ["pheromone", "smell"],
+  ["sugar", "taste"], ["bitter", "taste"], ["wind", "wind"], ["heat", "temperature"], ["cold", "temperature"],
+  ["dry air", "humidity"], ["moist air", "humidity"], ["touch L", "touch"], ["touch R", "touch"], ["head touch", "touch"]];
+const COLOUR_ROWS = [["R1-6 (brightness)", "#ebe5d7"], ["R8 (blue/green)", "#6cf08a"], ["R7 (UV/blue)", "#8a7cff"]];
+function buildSenses() {
+  if (!V.stimuli) { $("senses").innerHTML = "<p class=note>Watch this video again for these panels.</p>"; return false; }
+  const used = new Set((V.schedule || []).map((x) => x[0]));
+  const rows = SENSE_ROWS.filter(([n]) => idx["sense: " + n] !== undefined);
+  $("senses").innerHTML = COLOUR_ROWS.filter(([n]) => idx[n] !== undefined).map(([n, c]) =>
+      `<div class="sense"><span></span><b>${n.split(" ")[0]} ${n.split(" ")[1] || ""}</b><div class="bar"><i id="se-${sid(n)}" style="background:${c}"></i></div><span class="v" id="sv2-${sid(n)}"></span></div>`).join("") +
+    rows.map(([n]) => `<div class="sense" title="${esc(V.stimuli[n] ? V.stimuli[n].what : "")}"><span class="lamp2" id="sl-${sid(n)}"></span><b style="${used.has(n) ? "" : "opacity:.55"}">${n}</b><div class="bar"><i id="se-${sid("sense: " + n)}" style="background:#ff6a3d"></i></div><span class="v" id="sv2-${sid("sense: " + n)}"></span></div>`).join("");
+  const sm = [["smell receptors (all ORN)", "receptors"], ["smell projection neurons", "projection"], ["lateral horn (innate smell)", "lateral horn"],
+              ["mushroom body (Kenyon cells)", "Kenyon cells"], ["memory output (MBON)", "memory out"]];
+  $("smell").innerHTML = sm.filter(([n]) => idx[n] !== undefined).map(([n, l]) =>
+    `<div class="sense"><span></span><b>${l}</b><div class="bar"><i id="se-${sid(n)}" style="background:#3ed8ff"></i></div><span class="v" id="sv2-${sid(n)}"></span></div>`).join("") +
+    `<div class="sense"><span></span><b>KCs active</b><div class="bar"><i id="kcbar" style="background:#ffe14d"></i></div><span class="v" id="kcv"></span></div>`;
+  $("clockpanel").innerHTML = [["clock neurons", "clock"], ["insulin cells (IPC)", "insulin (IPC)"], ["compass (EPG)", "compass EPG"], ["compass shift (PEN)", "compass PEN"], ["steering (PFL)", "steering PFL"]]
+    .filter(([n]) => idx[n] !== undefined).map(([n, l]) =>
+    `<div class="sense"><span></span><b>${l}</b><div class="bar"><i id="se-${sid(n)}" style="background:#ffb23e"></i></div><span class="v" id="sv2-${sid(n)}"></span></div>`).join("");
+  const kcRest = idx["mushroom body (Kenyon cells)"] !== undefined ? V.rest[idx["mushroom body (Kenyon cells)"]] : 0;
+  const kcMean = V.kc_active ? V.kc_active.reduce((a, b) => a + b, 0) / V.kc_active.length : 0;
+  if (kcMean > 0.5) $("kcflag").textContent = `Saturated in this model: ${Math.round(kcMean * 100)}% of Kenyon cells fire in a frame (${kcRest.toFixed(0)} spikes/s each at rest). A real fly's are sparse, about 5-10% per odour, so the learning centre cannot show smells here.`;
+  return true;
+}
+let SENSES_OK = false;
+function absBar(n, i, full) { const el = document.getElementById("se-" + sid(n)), v = document.getElementById("sv2-" + sid(n));
+  if (!el || idx[n] === undefined) return; const r = V.rates[i][idx[n]], x = sm("se" + n, r, 0.35);
+  el.style.width = `${Math.min(100, (x / full) * 100)}%`; if (v) v.textContent = x.toFixed(1); }
+function drawSenses(i) {
+  if (!SENSES_OK) return;
+  const on = new Set((V.stim_on || [])[i] || []);
+  for (const [n] of SENSE_ROWS) { const l = document.getElementById("sl-" + sid(n)); if (l) l.classList.toggle("on", on.has(n)); absBar("sense: " + n, i, 50); }
+  for (const [n] of COLOUR_ROWS) absBar(n, i, 50);
+  for (const n of ["smell receptors (all ORN)", "smell projection neurons", "lateral horn (innate smell)", "mushroom body (Kenyon cells)", "memory output (MBON)",
+                   "clock neurons", "insulin cells (IPC)", "compass (EPG)", "compass shift (PEN)", "steering (PFL)"]) absBar(n, i, 50);
+  if (V.kc_active) { const k = V.kc_active[i] || 0; $("kcbar").style.width = `${k * 100}%`; $("kcv").textContent = `${(k * 100).toFixed(1)}%`; }
+}
+function drawCompass(i) {
+  const c = $("compass"), g = c.getContext("2d"), W = c.width, H = c.height, cx = W / 2, cy = H / 2, R = 95;
+  g.fillStyle = "#151619"; g.fillRect(0, 0, W, H);
+  if (!EPG) { g.fillStyle = "#8f897d"; g.font = "12px IBM Plex Mono"; g.fillText("watch again for the compass", 70, cy); return; }
+  g.strokeStyle = "#2b2c30"; g.lineWidth = 14; g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.stroke();
+  const B = V.epg_bytes; let sx = 0, sy = 0, n = 0;
+  V.epg_angle.forEach((a, k) => {
+    const lit = (EPG[i * B + (k >> 3)] & (128 >> (k & 7))) !== 0, r = (a * Math.PI) / 180;
+    const x = cx + Math.cos(r) * R, y = cy + Math.sin(r) * R;
+    g.fillStyle = lit ? "#ffb23e" : "#3a3c42"; g.beginPath(); g.arc(x, y, lit ? 6 : 3, 0, Math.PI * 2); g.fill();
+    if (lit) { sx += Math.cos(r); sy += Math.sin(r); n++; }
+  });
+  g.font = "12px IBM Plex Mono"; g.textAlign = "center"; g.fillStyle = "#8f897d";
+  if (n) { const len = Math.hypot(sx, sy) / n; g.strokeStyle = "#ffb23e"; g.lineWidth = 3; g.beginPath(); g.moveTo(cx, cy);
+    g.lineTo(cx + (sx / n) * R * 0.85, cy + (sy / n) * R * 0.85); g.stroke();
+    g.fillText(`${n} of ${V.epg_angle.length} firing · bump strength ${(len * 100).toFixed(0)}%`, cx, H - 10); }
+  else g.fillText("no EPG neuron fired this frame", cx, H - 10);
+}
+function drawStimStrip(g, W, labelW, t) {
+  if (!V.schedule || !V.schedule.length) return;
+  V.schedule.forEach(([name, a, b], k) => { const x0 = labelW + (a / V.seconds) * (W - labelW), x1 = labelW + (Math.min(b, V.seconds) / V.seconds) * (W - labelW);
+    g.fillStyle = "rgba(255,106,61,0.18)"; g.fillRect(x0, 0, x1 - x0, g.canvas.height); g.fillStyle = "#ff6a3d"; g.fillRect(x0, 0, x1 - x0, 4);
+    g.font = "11px IBM Plex Mono"; g.textAlign = "left"; g.fillText(name, x0 + 3, 16 + 12 * (k % 2)); });
+}
+
 function loop(now) {
   const v = $("v"), t = v.currentTime || 0;
   const i = Math.min(V.frames - 1, Math.floor(t * V.fps));
@@ -434,6 +524,8 @@ function loop(now) {
     drawInputs(i);
     drawLR(i);
     drawRaster(i);
+    drawSenses(i);
+    drawCompass(i);
     if (now - lastTable > 250) { drawTable(i); lastTable = now; }
     $("clock").textContent = fmt(V.start + t);
     last = i;

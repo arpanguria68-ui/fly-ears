@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from flyears import audio, body, ear, listen, vision
+from flyears import audio, body, ear, listen, senses, vision
 
 HERE = Path(__file__).resolve().parent
 FPS = 25                                 # set per video in main(): 50 when the source has 50+ frames a second,
@@ -89,6 +89,17 @@ def has_audio(src: Path) -> bool:
     return bool(r.stdout.strip())
 
 
+def colour_frames(src: Path, start: float, seconds: float) -> np.ndarray:
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(start), "-t", str(seconds), "-i", str(src), "-vf",
+                          f"fps={FPS},scale={vision.FLOW_W}:{vision.FLOW_H},format=rgb24", "-f", "rawvideo", "pipe:1"],
+                         capture_output=True, check=True).stdout
+    return np.frombuffer(raw, np.uint8).reshape(-1, vision.FLOW_H, vision.FLOW_W, 3)
+
+
+def grey(rgb: np.ndarray) -> np.ndarray:
+    return (rgb[..., 0] * 0.299 + rgb[..., 1] * 0.587 + rgb[..., 2] * 0.114).astype(np.uint8)
+
+
 def small_frames(src: Path, start: float, seconds: float) -> np.ndarray:
     raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(start), "-t", str(seconds), "-i", str(src), "-vf",
                           f"fps={FPS},scale={vision.FLOW_W}:{vision.FLOW_H},format=gray", "-f", "rawvideo", "pipe:1"],
@@ -111,6 +122,7 @@ def recorded_groups(brain, eyes) -> dict[str, np.ndarray]:
          "photoreceptors": np.asarray(brain.visual)}
     g.update(listen.groups(brain))
     g.update(body.groups(brain))                           # body parts, behaviour commands, states
+    g.update(senses.systems(brain))                        # colour, smell, taste, ... and memory, compass, clock
     side = np.asarray(brain.side).astype(str)              # left vs right for the main pathways
     if eyes.has_motion:
         g["T4/T5 L"], g["T4/T5 R"] = eyes.cells[eyes.left], eyes.cells[~eyes.left]
@@ -145,7 +157,8 @@ def code_arrays(n: int, groups: dict[str, np.ndarray]) -> list[np.ndarray]:
     return arrays
 
 
-def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool):
+def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool, rgb: np.ndarray | None = None,
+             stim: "senses.Stimuli | None" = None):
     G = recorded_groups(brain, eyes)
     names = list(G)
     codes = code_arrays(brain.n, G)
@@ -163,6 +176,16 @@ def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool):
             pick = ids if len(ids) <= RASTER_PER_GROUP else sorted(rng.choice(ids, RASTER_PER_GROUP, replace=False))
             raster_rows += [gname] * len(pick)
             raster_ids += [int(x) for x in pick]
+    colour = senses.ColourEyes(brain, vision.FLOW_W) if rgb is not None else None
+    kc = G.get("mushroom body (Kenyon cells)", np.array([], int))
+    is_kc = np.zeros(brain.n, bool)
+    is_kc[kc] = True
+    epg = G.get("compass (EPG)", np.array([], int))
+    epg_index = np.full(brain.n, -1)
+    epg_index[epg] = np.arange(len(epg))
+    kc_active = np.zeros(len(frames), np.float32)          # share of Kenyon cells firing in each frame
+    epg_bits = np.zeros((len(frames), len(epg)), bool)
+    stim_on: list[list[str]] = []
     rindex = np.full(brain.n, -1)
     rindex[raster_ids] = np.arange(len(raster_ids))
     raster = np.zeros((len(frames), len(raster_ids)), bool)
@@ -170,25 +193,36 @@ def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool):
     rest = np.zeros(K, np.float32)
     grey = np.full((vision.FLOW_H, vision.FLOW_W), 128, np.uint8)
     brain.reset(1)
+    rest_view = colour.drive(np.full((vision.FLOW_H, vision.FLOW_W, 3), 128, np.uint8)) if colour else \
+        eyes.photoreceptors(grey)
     for k in range(REST_SETTLE + REST_MEASURE):          # rest: a plain grey view, silence; the brain
-        f = brain.step(eye_drive=eyes.photoreceptors(grey))   # settles first, then rest is measured
+        f = brain.step(eye_drive=rest_view)               # settles first, then rest is measured
         if k >= REST_SETTLE:
             rest += sum(np.bincount(c[f][c[f] >= 0], minlength=K) for c in codes) / REST_MEASURE
     eyes.prev = None
     t0 = time.perf_counter()
     for i, frame in enumerate(frames):
         photo, inject = eyes.see(frame)
+        if colour is not None:
+            photo = colour.drive(rgb[i])                   # R1-6 brightness, R8 green, R7 blue
         fired_frame = []
         for k in range(STEPS_PER_FRAME):
             s = i * STEPS_PER_FRAME + k
             sound = ear.injections(cells, bands, env[s][:, None]) if hear and s < len(env) else []
             sound = [(idx, float(np.ravel(a)[0])) for idx, a in sound]
-            f = brain.step(eye_drive=photo, inject=inject + sound)
+            smell = stim.at(s * brain.dt) if stim is not None else []
+            f = brain.step(eye_drive=photo, inject=inject + sound + smell)
             rates[s] = sum(np.bincount(c[f][c[f] >= 0], minlength=K) for c in codes)
             fired_frame.append(f)
             r = rindex[f]
             raster[i, r[r >= 0]] = True
         spikes.append(np.concatenate(fired_frame))
+        both = spikes[-1]
+        if len(kc):
+            kc_active[i] = len(np.unique(both[is_kc[both]])) / len(kc)
+        e = epg_index[both]
+        epg_bits[i, e[e >= 0]] = True
+        stim_on.append(stim.on(i / FPS) if stim is not None else [])
         motion.append(eyes.last["motion"] if eyes.last["motion"] is not None else None)
         loom[i] = eyes.last["loom"]
         light[i] = float(photo.mean())
@@ -196,7 +230,8 @@ def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool):
             log(f"  watched {(i + 1) / FPS:.0f} s of {len(frames) / FPS:.0f} s "
                 f"({(time.perf_counter() - t0) / (i + 1) * FPS:.1f} s per video second)")
     to_rate = 1 / (sizes * brain.dt)
-    extra = {"raster": raster, "raster_rows": raster_rows, "light": light}
+    extra = {"raster": raster, "raster_rows": raster_rows, "light": light, "kc_active": kc_active,
+             "epg": epg, "epg_bits": epg_bits, "stim_on": stim_on}
     return names, rates * to_rate, rest * to_rate, spikes, motion, loom, extra
 
 
@@ -353,7 +388,7 @@ MAX_SPIKES = 3000                         # spikes kept per frame for the browse
 
 
 def save_view(out: Path, brain, sim, src: Path, start: float, seconds: float, source: str, rewired: bool, hear: bool,
-              env_frames: np.ndarray, eyes):
+              env_frames: np.ndarray, eyes, schedule: list):
     """Data for the browser viewer: per-frame rates of every group, sampled spikes, eye maps, the ear's
     bands, a spike raster of real neurons, and a clean clip."""
     names, rates, rest, spikes, motion, loom = sim[:6]
@@ -371,6 +406,15 @@ def save_view(out: Path, brain, sim, src: Path, start: float, seconds: float, so
                                              "front": np.round(cols["front"], 3).tolist(),
                                              "up": np.round(cols["up"], 3).tolist(), "hue": hue.tolist()}))
     (out / "raster.bin").write_bytes(np.packbits(extra["raster"], axis=1).tobytes())
+    epg = extra["epg"]
+    epg_angle = []
+    if len(epg) and getattr(brain, "positions", None) is not None:
+        p = np.asarray(brain.positions, np.float64)[epg]
+        p = p - np.nanmean(p, 0)                          # the ring of the ellipsoid body: its two widest axes
+        _, _, vt = np.linalg.svd(np.nan_to_num(p), full_matrices=False)
+        xy = np.nan_to_num(p) @ vt[:2].T
+        epg_angle = np.round(np.degrees(np.arctan2(xy[:, 1], xy[:, 0])) % 360).astype(int).tolist()
+        (out / "compass.bin").write_bytes(np.packbits(extra["epg_bits"], axis=1).tobytes())
     per = rates.reshape(-1, STEPS_PER_FRAME, rates.shape[1]).mean(1)
     rng = np.random.default_rng(0)
     kept = [s if len(s) <= MAX_SPIKES else np.sort(rng.choice(s, MAX_SPIKES, replace=False)) for s in spikes]
@@ -392,7 +436,10 @@ def save_view(out: Path, brain, sim, src: Path, start: float, seconds: float, so
             "ear": np.round(env_frames, 3).tolist(), "bands": np.round(ear.BAND_EDGES).astype(int).tolist(),
             "light": np.round(extra["light"], 3).tolist(), "has_motion": bool(eyes.has_motion),
             "eye_cells": int(len(eyes.cells)) if eyes.has_motion else 0,
-            "raster_rows": extra["raster_rows"], "raster_bytes": int((len(extra["raster_rows"]) + 7) // 8)}
+            "raster_rows": extra["raster_rows"], "raster_bytes": int((len(extra["raster_rows"]) + 7) // 8),
+            "kc_active": np.round(extra["kc_active"], 4).tolist(), "epg_angle": epg_angle,
+            "epg_bytes": int((len(epg_angle) + 7) // 8), "stim_on": extra["stim_on"], "schedule": schedule,
+            "stimuli": {k: {"sense": v[2], "what": v[3]} for k, v in senses.STIMULI.items()}, "colour": True}
     (out / "view.json").write_text(json.dumps(view), encoding="utf-8")
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(start), "-t", str(seconds), "-i", str(src), "-vf",
                     "scale=854:-2", "-c:v", "libx264", "-crf", "23", "-preset", "veryfast", "-c:a", "aac",
@@ -406,6 +453,8 @@ def main() -> None:
     p.add_argument("--seconds", type=float, default=60.0, help="how much to watch")
     p.add_argument("--rewired", action="store_true", help="a degree-preserving scrambled brain")
     p.add_argument("--no-sound", action="store_true", help="eyes only")
+    p.add_argument("--stim", default="", help="smells, tastes, wind, temperature, humidity, touch on a schedule, "
+                   "e.g. 'vinegar:5-15,heat:20-30' (seconds into the clip); names: " + ", ".join(senses.STIMULI))
     p.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     p.add_argument("--out", default=None, help="output folder (default out/watch/<name>)")
     a = p.parse_args()
@@ -417,11 +466,17 @@ def main() -> None:
     seconds = max(0.5, min(a.seconds, total - a.start)) if total else a.seconds
     whole = a.start == 0 and (not total or seconds >= total - 0.5)
     part = "" if whole else f"_{int(a.start // 60)}m{int(a.start % 60):02d}s_{seconds:g}s"   # parts kept apart
-    name = re.sub(r"[^\w-]+", "_", src.stem)[:60] + part + ("_rewired" if a.rewired else "")
+    tag = "_" + re.sub(r"[^\w]+", "-", a.stim.replace(":", "")).strip("-")[:40] if a.stim else ""
+    name = re.sub(r"[^\w-]+", "_", src.stem)[:60] + part + tag + ("_rewired" if a.rewired else "")
     out = Path(a.out) if a.out else HERE / "out" / "watch" / name
     out.mkdir(parents=True, exist_ok=True)
     log(f"{src.name}: watching {seconds:.1f} s from {a.start:.1f} s")
-    frames = small_frames(src, a.start, seconds)
+    try:
+        schedule = senses.parse_schedule(a.stim)
+    except ValueError as e:
+        raise SystemExit(str(e))
+    rgb = colour_frames(src, a.start, seconds)
+    frames = grey(rgb)
     x = soundtrack(src, a.start, seconds)
     hear = bool(not a.no_sound and np.abs(x).max() > 1e-4)
     env = ear.envelopes(audio.level(x)) if hear else np.zeros((len(frames) * STEPS_PER_FRAME, ear.N_BANDS), np.float32)
@@ -433,7 +488,10 @@ def main() -> None:
         log("  (no columns.npz in the fly data: motion detectors off, photoreceptors and looming only)")
     log(f"  {len(frames)} frames at {FPS} fps ({1000 // FPS} ms each = {STEPS_PER_FRAME} brain step"
         f"{'s' if STEPS_PER_FRAME > 1 else ''}), sound: {'yes' if hear else 'no'}, brain on {brain.device}")
-    sim = simulate(brain, eyes, frames, env, hear)
+    stim = senses.Stimuli(brain, schedule) if schedule else None
+    if schedule:
+        log("  stimuli: " + ", ".join(f"{n} {s0:g}-{s1:g} s" for n, s0, s1 in schedule))
+    sim = simulate(brain, eyes, frames, env, hear, rgb=rgb, stim=stim)
     names, rates, rest = sim[0], sim[1], sim[2]
     header = "time_s," + ",".join(n.replace(",", " ") for n in names) + ",loom_L,loom_R," + \
              ",".join(f"ear_band_{b}" for b in range(ear.N_BANDS))
@@ -451,7 +509,7 @@ def main() -> None:
     for r in summary[:8]:
         log(f"    {r['group']:22s} {r['rest']:7.3f} -> {r['watching']:7.3f}  ({r['change']:+.3f})")
     env_frames = env.reshape(-1, STEPS_PER_FRAME, ear.N_BANDS).mean(1)
-    save_view(out, brain, sim, src, a.start, seconds, a.source, a.rewired, hear, env_frames, eyes)
+    save_view(out, brain, sim, src, a.start, seconds, a.source, a.rewired, hear, env_frames, eyes, schedule)
     panel = Panel(brain, eyes, names, rates, rest)
     log("  drawing the video...")
     part = out / "fly_watching.part.mp4"              # finished videos only: a stop mid-way leaves no broken file

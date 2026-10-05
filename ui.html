@@ -29,6 +29,12 @@ table td.n{font-variant-numeric:tabular-nums}
 .links{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font:12px var(--mono)}
 pre.report{font:12px/1.45 var(--mono);white-space:pre-wrap;max-height:520px;overflow:auto;margin:0}
 .hint{font:12px var(--sans);color:var(--dim-case);margin-top:6px}
+.stimbox{margin-top:12px;padding-top:10px;border-top:1px dashed var(--case-lo)}
+.stimtitle{font:400 10px var(--label);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-case)}
+.stimtitle span{font:12px var(--sans);letter-spacing:0;text-transform:none;color:var(--dim-case)}
+.chips2{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chips2 span{font:12px var(--mono);background:var(--panel);color:var(--text);border-radius:3px;padding:4px 4px 4px 8px;display:inline-flex;gap:6px;align-items:center}
+.chips2 span button{padding:0 6px 1px!important;font-size:12px!important}
 </style></head><body>
 <header class="deck">
   <a class="logo" href="/">FLYBRAIN<small>EARS &amp; EYES · FB-166700</small></a>
@@ -56,6 +62,21 @@ pre.report{font:12px/1.45 var(--mono);white-space:pre-wrap;max-height:520px;over
     <label>watch for <input type="number" id="secs" value="60" min="1" max="600" aria-label="seconds to watch"> s</label>
     <label><input type="checkbox" id="rewired"> scrambled brain (control)</label>
     <button type="button" class="big" id="go">Watch</button>
+   </div>
+   <div class="stimbox">
+    <div class="stimtitle">Also let it smell, taste, feel <span>(optional: what a real fly senses besides sight and sound)</span></div>
+    <div class="row" style="margin-top:6px">
+     <select id="stimname" aria-label="stimulus">
+      <optgroup label="smell"><option value="fruit">fruit (food esters)</option><option value="vinegar">vinegar</option><option value="mould">mould (geosmin, danger)</option><option value="CO2">CO2 (stress odour)</option><option value="pheromone">male pheromone (cVA)</option></optgroup>
+      <optgroup label="taste"><option value="sugar">sugar</option><option value="bitter">bitter</option></optgroup>
+      <optgroup label="air"><option value="wind">wind</option><option value="heat">heat</option><option value="cold">cold</option><option value="dry air">dry air</option><option value="moist air">moist air</option></optgroup>
+      <optgroup label="touch"><option value="touch L">touch, left side</option><option value="touch R">touch, right side</option><option value="head touch">touch, head</option></optgroup>
+     </select>
+     <label>from <input type="text" id="stimfrom" value="0:05" style="width:64px" aria-label="from (m:ss into the clip)"></label>
+     <label>to <input type="text" id="stimto" value="0:15" style="width:64px" aria-label="to (m:ss into the clip)"></label>
+     <button type="button" id="stimadd">Add</button>
+    </div>
+    <div class="chips2" id="stimlist"></div>
    </div>
    <div class="msg" id="msg" role="status" aria-live="polite"></div>
    <div class="hint">About 20 s of computing per minute of video on a GPU, then it plays below. Use videos you have the right to use.</div>
@@ -123,8 +144,19 @@ $("file").onchange = async () => {
   $("src").value = r.path;
   $("msg").textContent = `ready: ${f.name}. Press Watch.`;
 };
+const STIM = [];
+function drawStim() {
+  $("stimlist").innerHTML = STIM.map((x, k) => `<span>${esc(x[0])} ${x[1]}-${x[2]} s<button type="button" data-k="${k}" aria-label="remove">×</button></span>`).join("");
+  $("stimlist").querySelectorAll("button").forEach((b) => (b.onclick = () => { STIM.splice(+b.dataset.k, 1); drawStim(); }));
+}
+$("stimadd").onclick = () => {
+  const a = seconds($("stimfrom").value), b = seconds($("stimto").value);
+  if (!(b > a)) { $("msg").textContent = "the stimulus must end after it starts"; return; }
+  STIM.push([$("stimname").value, a, b]); drawStim(); $("msg").textContent = "";
+};
 $("go").onclick = async () => {
-  const r = await post("/watch", { source: $("src").value, start: seconds($("start").value), seconds: +$("secs").value, rewired: $("rewired").checked });
+  const stim = STIM.map(([n, a, b]) => `${n}:${a}-${b}`).join(",");
+  const r = await post("/watch", { source: $("src").value, start: seconds($("start").value), seconds: +$("secs").value, rewired: $("rewired").checked, stim });
   $("msg").textContent = r.ok ? "the fly is watching..." : r.error;
 };
 $("mgo").onclick = async () => {

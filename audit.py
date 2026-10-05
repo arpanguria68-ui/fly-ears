@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 
 import watch
-from flyears import audio, ear, listen, vision
+from flyears import audio, ear, listen, senses, vision
 
 CHECK_S = 2.0                        # seconds re-simulated for B and C
 
@@ -55,15 +55,18 @@ def main() -> None:
     if src is None or not src.exists():
         print("   SKIP: source video not on this PC")
     else:
-        frames = watch.small_frames(src, v["start"], CHECK_S)[:n_frames]
+        rgb = watch.colour_frames(src, v["start"], CHECK_S)[:n_frames] if v.get("colour") else None
+        frames = watch.grey(rgb) if rgb is not None else watch.small_frames(src, v["start"], CHECK_S)[:n_frames]
+        sched = [tuple(x) for x in v.get("schedule", [])]
         x = watch.soundtrack(src, v["start"], v["seconds"])          # loudness is set over the whole clip,
         env = ear.envelopes(audio.level(x)) if v["sound"] else np.zeros((n_frames * 2, ear.N_BANDS), np.float32)
         need = n_frames * watch.STEPS_PER_FRAME
         env = np.vstack([env, np.zeros((max(0, need - len(env)), ear.N_BANDS), np.float32)])[:need]
         brain = listen.make_brain(1, "auto", rewired=v["rewired"])
         eyes = vision.Eyes(brain, fps=v["fps"])
-        names, rates, rest, *_ = watch.simulate(brain, eyes, frames, env, v["sound"])
-        again = watch.simulate(brain, vision.Eyes(brain, fps=v["fps"]), frames, env, v["sound"])[1]
+        stim = senses.Stimuli(brain, sched) if sched else None
+        names, rates, rest, *_ = watch.simulate(brain, eyes, frames, env, v["sound"], rgb=rgb, stim=stim)
+        again = watch.simulate(brain, vision.Eyes(brain, fps=v["fps"]), frames, env, v["sound"], rgb=rgb, stim=stim)[1]
         print(f"   same run twice: largest difference {np.abs(again - rates).max():.4g} "
               f"({'deterministic' if np.abs(again - rates).max() == 0 else 'NOT deterministic'})")
         saved = rows[:need, 1:1 + len(names)]
@@ -80,8 +83,10 @@ def main() -> None:
         # C ------------------------------------------------------------ nothing shown without a stimulus
         print("\nC. the same length of a plain grey view in silence")
         grey = np.full_like(frames, 128)
+        grey_rgb = np.full_like(rgb, 128) if rgb is not None else None
         brain.reset(1)
-        names2, rates2, rest2, *_ = watch.simulate(brain, vision.Eyes(brain, fps=v["fps"]), grey, np.zeros_like(env), False)
+        names2, rates2, rest2, *_ = watch.simulate(brain, vision.Eyes(brain, fps=v["fps"]), grey, np.zeros_like(env), False,
+                                                   rgb=grey_rgb)
         dev = rates2.mean(0) - rest2
         clip_dev = rates.mean(0) - rest
         key = [n for n in names if n in ("T4/T5 (motion)", "LPLC2 (looming)", "ear JO-A/B", "escape", "fear", "WED",

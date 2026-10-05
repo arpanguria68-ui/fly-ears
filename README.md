@@ -112,6 +112,33 @@ neurons (PAM) fire on every step at rest and while watching (50 spikes/s, this m
 the punishment ones (PPL1) nearly so: saturated, they cannot report anything here, and the viewer
 marks them so.
 
+## What else a real fruit fly has
+
+Beyond sight and hearing, the fly gets what a real fruit fly senses, through its own receptor
+neurons, and the viewer's **What else a real fly has** section shows the systems that use them:
+
+| feature | neurons | how it gets in |
+|---|---|---|
+| colour vision | R1-6 brightness (3,377), R8 blue/green (1,329), R7 UV/blue (1,300) | from the video's colours (video has no ultraviolet: blue stands in for R7) |
+| smell | fruit (ORN_DM1/DM2), vinegar (VL2a), mould / geosmin (DA2), CO2 (V), male pheromone cVA (DA1, VA1d) | on a schedule you set |
+| taste | sugar (LB3, LB2d), bitter (LB1) | schedule |
+| wind, heat, cold, dry / moist air | Johnston's organ wind cells, TRN_VP2 / VP3, HRN_VP4 / VP5 | schedule |
+| touch | body bristles (SNta, per side), head bristles | schedule |
+| smell -> memory | projection neurons, mushroom body (4,064 Kenyon cells), lateral horn, memory output neurons | readout |
+| compass | the 50 EPG neurons of the ellipsoid body ring (heading), PEN, PFL | readout |
+| clock and hunger | clock neurons (LNv, LNd, DN1), insulin-producing cells | readout |
+
+Schedule stimuli on the Watch page (*Also let it smell, taste, feel*) or on the command line:
+`watch.py my_video.mp4 --stim "vinegar:5-15,heat:20-30"` (seconds into the clip; 0.6 V per step into
+the receptors while on). Each stimulus drives exactly its receptors during its window (checked:
+receptors ~0.3 -> 25 spikes/s and back), and `audit.py` replays the schedule too.
+
+Honest finding: the mushroom body is **saturated** in this model: its Kenyon cells fire on every
+step (100% active, at rest and with smells), where a real fly's are sparse (about 5-10% per odour),
+and its memory output neurons are near the ceiling too. So the learning centre cannot show smell
+responses here; the viewer says so. Smell projection neurons do respond a little (about +1
+spike/s), and the insulin cells rose with sugar in one run (1.5 -> 2.6 spikes/s).
+
 ## What is real, what is modelled (and how it is checked)
 
 **Real (simulated, not drawn or edited):** every spike, rate, raster mark and bar comes from
@@ -227,6 +254,7 @@ the beeps (9.1 during a beep, 3.8 between).
 | `flyears/vision.py` | video frames -> photoreceptors, T4/T5 motion detectors, LPLC2 looming |
 | `watch.py` | a link or video file -> the fly watches it -> video, timeline, summary |
 | `flyears/body.py` | body parts, behaviour commands and internal states, from real neurons |
+| `flyears/senses.py` | colour vision, smell, taste, wind, temperature, humidity, touch; memory, compass, clock readouts |
 | `ui.py`, `ui.html`, `view.html`, `retro.css` | the browser pages (port 8790) |
 | `audit.py` | checks a watched video: timing, re-simulation, no phantom responses |
 | `run.py` | everything, and the report |
