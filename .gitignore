@@ -1,0 +1,8 @@
+songs/human/*
+songs/ai/*
+!songs/*/README.md
+out/
+out_*.log
+__pycache__/
+*.pyc
+.pytest_cache/
