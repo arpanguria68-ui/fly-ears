@@ -16,6 +16,7 @@ import numpy as np
 
 from flyears import lamina
 from flyears.hybrid import HybridBrain
+from flyears.senses import ColumnEyes
 
 W, H = 160, 90
 DIRS = {"right": (1, 0), "left": (-1, 0), "up": (0, -1), "down": (0, 1)}       # in the frame (y down)
@@ -46,20 +47,11 @@ def main() -> None:
     brain = HybridBrain(device=device)
     xp = brain.xp
     pos = lamina.build_eye_positions()
-    ct = np.asarray(brain.cell_type).astype(str)
-    # photoreceptors at their eye columns (front of each eye = frame centre)
-    where = {int(c): k for k, c in enumerate(pos["cells"])}
-    vis = np.asarray(brain.visual)
-    k = np.array([where.get(int(c), -1) for c in vis])
-    ok = k >= 0
-    left = pos["eye"][k[ok]] == "L"
-    x = np.where(left, 0.5 * pos["front"][k[ok]], 1 - 0.5 * pos["front"][k[ok]])      # front of each eye = centre
-    px = np.full(len(vis), W // 2)
-    py = np.full(len(vis), H // 2)
-    px[ok] = np.clip(np.round(x * (W - 1)), 0, W - 1)
-    py[ok] = np.clip(np.round((1 - pos["up"][k[ok]]) * (H - 1)), 0, H - 1)
-    print(f"photoreceptors placed on the eye: {ok.sum()} of {len(vis)}")
-    drive = lambda img: img[py, px]                                          # noqa: E731
+    # the same eyes as for videos (senses.ColumnEyes: columns, optics, light, colour); stimuli are grey levels
+    eyes = ColumnEyes(brain, W, H)
+    print(f"photoreceptors placed on the eye: {eyes.placed} of {len(eyes.x)}; "
+          f"column spacing {eyes.spacing:.2f} px, acceptance blur sigma {eyes.sigma:.2f} px")
+    drive = lambda img: eyes.drive((np.repeat(img[..., None], 3, 2) * 255).astype(np.uint8))   # noqa: E731
     grey = np.full((H, W), 0.5, np.float32)
     brain.calibrate(drive(grey))
     print(f"calibrated: graded neurons rest at {float(brain.out[brain._g].mean()):.3f} (target 0.3)")

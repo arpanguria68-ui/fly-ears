@@ -228,7 +228,7 @@ def simulate(brain, eyes, frames: np.ndarray, env: np.ndarray, hear: bool, rgb: 
     for i, frame in enumerate(frames):
         photo, inject = eyes.see(frame)
         if colour is not None:
-            photo = colour.drive(rgb[i])                   # R1-6 brightness, R8 green, R7 blue
+            photo = colour.drive(rgb[i])                   # optics, physical light, rhodopsin colour weights
         fired_frame = []
         for k in range(STEPS_PER_FRAME):
             s = i * STEPS_PER_FRAME + k

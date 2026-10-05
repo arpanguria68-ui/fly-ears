@@ -20,9 +20,10 @@ Speeds (time constants), approximations of published measurements (Behnia et al.
 Arenz et al. 2017 Curr Biol 27:929): photoreceptors 5 ms; L1-L5 and the fast medulla inputs Mi1, Tm3,
 Tm1, Tm2, Tm4 10 ms; the slow ones Mi4, Mi9, Tm9 150 ms (ds_timing.py); every other graded neuron (incl. T4/T5) 20 ms.
 
-Photoreceptors adapt, as real ones do: each signals its light relative to its own recent mean (time
-constant ADAPT_TAU), around the resting level, so the optic lobe responds to contrast and change, not to
-how bright a scene is overall.
+Photoreceptors adapt, as real ones do: each divides its light by its own recent mean (time constant
+ADAPT_TAU; output light / (light + adapted light), 0.5 at the adapted level), so the optic lobe responds
+to contrast and change, the same in dim and bright scenes, not to how bright a scene is overall. The
+light itself comes from senses.ColumnEyes (optics, physical light, rhodopsin colour weights).
 
 Readout: a graded cell is turned into events while it is depolarised above its own resting output (0.1
 above rest = 5 per second), by a deterministic counter, so rates, rasters and maps show responses, not
@@ -40,7 +41,7 @@ REST = 0.3                  # graded resting output under a grey view
 K = 2.0                     # graded input gain: a full swing of input moves the output across its range
 FULL_RATE = 50.0            # spikes/s that a graded output of 1 stands for
 ADAPT_TAU = 1.0             # s: photoreceptors adapt to the recent mean light (real ones signal contrast)
-ADAPT_GAIN = 1.0            # contrast -> output around the resting level (0.5 at the adapted mean)
+EPS_LIGHT = 1e-3            # darkest light a photoreceptor tells apart (screen black is not total darkness)
 SHUNT = 0.0                 # shunting (divisive) inhibition: inhibitory input also divides a graded
                             # cell's response, as conductance-based synapses do (set by tune_shunt.py)
 RATE_TAU = 0.020            # s: how a graded neuron reads a spiking partner (its spikes, low-passed)
@@ -156,7 +157,10 @@ class HybridBrain:
             if self._adapt is None:
                 self._adapt = light.copy()
             self._adapt += (light - self._adapt) * xp.float32(1 - np.exp(-0.020 / ADAPT_TAU))
-            photo_target = xp.clip(0.5 + ADAPT_GAIN * (light - self._adapt), 0, 1)
+            # divisive adaptation (Naka-Rushton, half-saturation = the adapted light): 0.5 at the adapted
+            # level, and the same response to the same contrast in dim or bright light (Weber), as real
+            # photoreceptors (Laughlin & Hardie 1978; Juusola 1993)
+            photo_target = (light + EPS_LIGHT) / (light + self._adapt + 2 * EPS_LIGHT)
         events = []
         for _ in range(SUB):
             spikes = xp.zeros(self.n, xp.float32)

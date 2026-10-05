@@ -122,12 +122,37 @@ def systems(brain) -> dict[str, np.ndarray]:
     return {k: v for k, v in g.items() if len(v)}
 
 
+# Spectral sensitivity at a display's red, green and blue primaries (about 610, 545 and 465 nm), read
+# roughly off the Drosophila rhodopsin curves (Salcedo et al. 1999 J Neurosci 19:10716); white = 1.
+#   R1-6, Rh1 (peak ~480 nm): nearly red-blind;  R8: Rh6 (~510 nm, the "yellow" R8s, about 70%; the
+#   dataset does not say which R8 is pale, Rh5 blue, so all get Rh6);  R7: Rh3/Rh4 are UV (345/375 nm),
+#   which a screen does not emit; only the blue primary reaches their long-wavelength tail.
+SPECTRAL = np.array([[0.03, 0.34, 0.63],      # R1-6
+                     [0.06, 0.55, 0.39],      # R8
+                     [0.00, 0.00, 1.00]],     # R7
+                    np.float32)
+
+
+def srgb_to_light(rgb: np.ndarray) -> np.ndarray:
+    """8-bit sRGB (gamma-encoded) -> the screen's physical light, 0..1 (IEC 61966-2-1)."""
+    c = rgb.astype(np.float32) / 255
+    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4).astype(np.float32)
+
+
 class ColumnEyes:
-    """Per-photoreceptor drive from a colour frame, each photoreceptor at its own eye column (2-D):
-    R1-6 brightness, R8 green, R7 blue (for UV). Columns from lamina.build_eye_positions(); the few
-    photoreceptors without one fall back to their azimuth at mid height."""
+    """Light from a colour frame into each photoreceptor at its own eye column (2-D), as a fly's eye takes it:
+
+    * optics: each ommatidium sees a blurred patch (Gaussian acceptance angle, full width at half maximum
+      = the spacing between neighbouring columns, as in Drosophila, ~5 deg each), not one pixel;
+    * light: the frame's sRGB values are turned back into the screen's physical light;
+    * colour: each type weighs red, green and blue by its rhodopsin (SPECTRAL).
+
+    Columns from lamina.build_eye_positions(). The few photoreceptors without a column get their eye's mean
+    light (no made-up position)."""
 
     def __init__(self, brain, width: int, height: int):
+        from scipy.spatial import cKDTree
+
         from .lamina import build_eye_positions
         pos = build_eye_positions()
         where = {int(c): k for k, c in enumerate(pos["cells"])}
@@ -135,18 +160,37 @@ class ColumnEyes:
         ct = np.asarray(brain.cell_type).astype(str)[visual]
         self.kind = np.where(ct == "R7", 2, np.where(ct == "R8", 1, 0))
         k = np.array([where.get(int(c), -1) for c in visual])
-        az = np.asarray(brain.azimuth, np.float32)
-        x = 0.5 + 0.5 * az
-        y = np.full(len(visual), 0.5, np.float32)
         ok = k >= 0
+        x = np.zeros(len(visual), np.float32)
+        y = np.zeros(len(visual), np.float32)
         left = pos["eye"][k[ok]] == "L"
-        x[ok] = np.where(left, 0.5 * pos["front"][k[ok]], 1 - 0.5 * pos["front"][k[ok]])
+        x[ok] = np.where(left, 0.5 * pos["front"][k[ok]], 1 - 0.5 * pos["front"][k[ok]])   # front = centre
         y[ok] = 1 - pos["up"][k[ok]]
         self.x = np.clip(np.round(x * (width - 1)), 0, width - 1).astype(int)
         self.y = np.clip(np.round(y * (height - 1)), 0, height - 1).astype(int)
+        self.ok = ok
+        self.left = np.where(ok, False, np.asarray(brain.azimuth)[: len(visual)] < 0)  # unplaced: which eye
+        self.left[ok] = left
         self.placed = int(ok.sum())
+        # column spacing in pixels (one R8 per column) -> acceptance angle
+        gaps = []
+        for e in "LR":
+            m = (pos["eye"] == e) & (pos["types"] == "R8")
+            p = np.c_[(0.5 * pos["front"][m] if e == "L" else 1 - 0.5 * pos["front"][m]) * (width - 1),
+                      (1 - pos["up"][m]) * (height - 1)]
+            gaps.append(cKDTree(p).query(p, 2)[0][:, 1])
+        self.spacing = float(np.median(np.concatenate(gaps)))
+        self.sigma = self.spacing / 2.355                                  # FWHM = spacing
 
     def drive(self, rgb: np.ndarray) -> np.ndarray:
-        px = rgb[self.y, self.x].astype(np.float32) / 255                # (n, 3)
-        table = np.stack([px.mean(1), px[:, 1], px[:, 2]], 1)
-        return table[np.arange(len(px)), self.kind].astype(np.float32)
+        from scipy.ndimage import gaussian_filter
+        light = srgb_to_light(rgb)
+        seen = gaussian_filter(light, (self.sigma, self.sigma, 0), mode="nearest")      # each ommatidium's patch
+        px = seen[self.y, self.x]                                          # (n, 3)
+        d = np.einsum("nc,nc->n", px, SPECTRAL[self.kind]).astype(np.float32)
+        if not self.ok.all():
+            half = rgb.shape[1] // 2
+            mean = [np.einsum("c,c->", light[:, s].reshape(-1, 3).mean(0), SPECTRAL[0]) for s in
+                    (slice(0, half), slice(half, None))]
+            d[~self.ok] = np.where(self.left[~self.ok], mean[0], mean[1])
+        return d

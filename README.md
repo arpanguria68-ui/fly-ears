@@ -128,7 +128,7 @@ neurons, and the viewer's **What else a real fly has** section shows the systems
 
 | feature | neurons | how it gets in |
 |---|---|---|
-| colour vision | R1-6 brightness (3,377), R8 blue/green (1,329), R7 UV/blue (1,300) | from the video's colours (video has no ultraviolet: blue stands in for R7) |
+| colour vision | R1-6 Rh1 (3,377), R8 as Rh6 (1,329), R7 UV (1,300) | the video's physical light weighed by each rhodopsin, through the eye's optics (screens emit no ultraviolet: only blue reaches R7) |
 | smell | fruit (ORN_DM1/DM2), vinegar (VL2a), mould / geosmin (DA2), CO2 (V), male pheromone cVA (DA1, VA1d) | on a schedule you set |
 | taste | sugar (LB3, LB2d), bitter (LB1) | schedule |
 | wind, heat, cold, dry / moist air | Johnston's organ wind cells, TRN_VP2 / VP3, HRN_VP4 / VP5 | schedule |
@@ -151,9 +151,34 @@ spike/s), and the insulin cells rose with sugar in one run (1.5 -> 2.6 spikes/s)
 ## Vision: the fly's own (default) or assisted
 
 **Fly-own vision (default)** sees only through the fly: each photoreceptor gets the light at its own
-eye column (all 6,006, placed from the MaleCNS optic-column table and the wiring; R1-6 brightness,
-R8 green, R7 blue), and the connectome does everything after that. Nothing of this program detects
-motion or looming.
+eye column, and the connectome does everything after that. Nothing of this program detects motion or
+looming. How the light gets in (`senses.ColumnEyes`), checked against the fly:
+
+* **where each photoreceptor looks**: 5,968 of the 6,006 photoreceptors in the dataset sit on an eye
+  column (MaleCNS optic-column table; R1-6 by the lamina cartridge they feed). The eye's front/up axes are
+  set from the T4 cells' wiring, so they were checked independently against the 3-D anatomy (axes from
+  landmarks: antennal lobe front, central complex back, VNC behind; dorsal = small y). In the lamina,
+  "front" lies anterior (correlation +0.88 left, +0.72 right) and "up" dorsal (+0.94, +0.99); in the
+  medulla front/back is reversed (-0.88, -0.91), as the real optic chiasm crosses it, and up is kept.
+  Each eye's own photoreceptors are on its own side (all 5,968). The 38 without a column get their
+  eye's mean light;
+* **optics**: an ommatidium sees a blurred patch, not a point. Its acceptance angle (Gaussian, full width
+  at half maximum) is set to the spacing between neighbouring columns, as in Drosophila (both ~5 deg);
+  here 2.63 px, so the frame is blurred with sigma 1.12 px before sampling. Before this fix each
+  photoreceptor read one pixel, about 1/7 of its patch;
+* **light**: video pixels are gamma-encoded (sRGB); they are turned back into the screen's physical
+  light before the eye. Photoreceptors adapt divisively, output light / (light + adapted light) over
+  ~1 s, so the same contrast gives the same response in dim and bright scenes (Weber), as real ones do.
+  Before this fix they subtracted gamma-encoded values;
+* **colour**: each type weighs the screen's red, green and blue by its rhodopsin (rough reading of the
+  curves in Salcedo et al. 1999): R1-6 (Rh1) nearly red-blind, R8 as Rh6 (the dataset does not say which
+  R8s are the blue-sensitive "pale" ones, ~30%), R7 (UV) only the blue primary, since screens emit no UV.
+  Before this fix R1-6 took the plain mean of red, green and blue;
+* **what is not like a real fly**: the video is spread over each eye's whole field (front of the eye
+  at the frame's centre, back of the eye at its edge), as if the fly were inside a panoramic screen, so
+  a normal 60-90 deg camera view is magnified several times. The dataset has fewer R1-6 than a real eye
+  (left 1,112, right 2,228, against ~4,500 per eye); R7/R8 (625 and 704 columns) are close to a real
+  eye's ~750. Frames come at the video's rate (25 or 50 per second), which a fly sees as flicker.
 
 To make that work like a real fly, `flyears/hybrid.py` simulates the optic lobe the way it works in a
 fly: **graded** neurons (photoreceptors, lamina, medulla, lobula, T4/T5 signal with smooth voltage around
@@ -171,14 +196,14 @@ Checked like a real fly (`physio.py`, gratings and edges into the photoreceptors
 
 * every stage has the real fly's sign for a light step: photoreceptors up; L1, L2, L3 down; the ON
   cells Mi1, Tm3, Mi4 up; the OFF cells Mi9, Tm1, Tm2, Tm4, Tm9 down;
-* **T4 prefers bright edges and T5 dark edges** (T4 +0.032 vs -0.037; T5 -0.037 vs +0.038);
-* **direction selectivity emerges from the wiring**: 15 of 16 T4/T5 subtype x eye groups respond most
+* **T4 prefers bright edges and T5 dark edges** (T4 +0.040 vs -0.031; T5 -0.039 vs +0.030);
+* **direction selectivity emerges from the wiring**: 13 of 16 T4/T5 subtype x eye groups respond most
   to the real fly's direction (a front-to-back, b back-to-front, c up, d down) at 1 Hz; **but weakly**:
-  mean index +0.04 on response amplitude, +0.06 on depolarisation only (as calcium imaging measures it,
-  positive in 11 of 16). A real fly's is about 0.3-0.8. **This is not solved** (see below);
+  mean index +0.04 on response amplitude, +0.04 on depolarisation only (as calcium imaging measures it,
+  positive in 10 of 16). (Before the optics fix above: 15 of 16, +0.04 and +0.06.) A real fly's is about 0.3-0.8. **This is not solved** (see below);
 * on the test video, over 5 noise seeds (`looming.py`), **LPLC2 and the escape neuron (giant fiber)
-  respond more to the approaching disc than to the sliding bars in 5 of 5** (LPLC2 2.80 vs 1.57, rest
-  0.93; giant fiber 2.22 vs 1.05, rest 0.35 spikes/s).
+  respond more to the approaching disc than to the sliding bars in 5 of 5** (LPLC2 2.98 vs 1.69, rest
+  0.93; giant fiber 2.39 vs 1.03, rest 0.35 spikes/s).
 
 What was tried for the weak direction selectivity, with the numbers:
 
@@ -233,7 +258,7 @@ watched video:
 All watched videos pass all three.
 
 **Modelled by this program, then injected** (transduction: the physical world into receptor
-neurons): the light at each photoreceptor's eye column (R8 green, R7 blue), 8 frequency bands into
+neurons): the light at each photoreceptor's eye column (optics, physical light, rhodopsin colour weights), 8 frequency bands into
 the ears (JO-B low, JO-A high: an assumption), smells and tastes into their receptors. In assisted
 vision only, also motion into T4/T5 and looming into LPLC2. The neuron model (graded optic lobe,
 spiking brain) is described above. From the receptors on, everything is the connectome.

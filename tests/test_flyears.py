@@ -297,3 +297,12 @@ def test_lamina_answers_darkening_only():
     hit = {int(c) for idx, _ in inj for c in idx}
     assert hit == {7}                                                   # only the left-eye cell, which got darker
     assert d.see(bright) == []                                          # brightening back: nothing (OFF only)
+
+
+def test_eyes_take_physical_light_and_fly_colours():
+    light = senses.srgb_to_light(np.array([0, 128, 255], np.uint8))
+    assert light[0] == 0 and abs(light[2] - 1) < 1e-6
+    assert abs(light[1] - 0.216) < 0.002                           # mid-grey on screen is ~22% of white's light
+    assert np.allclose(senses.SPECTRAL.sum(1), 1, atol=1e-6)       # white = 1 for every photoreceptor type
+    assert senses.SPECTRAL[0, 0] < 0.1                             # R1-6 are nearly red-blind
+    assert senses.SPECTRAL[2, :2].sum() == 0                       # R7 (UV): only the blue primary reaches them
