@@ -94,6 +94,15 @@ Every watched video gets a viewer (**Brain, body & emotions** on the result, or
   along the nerve cord, side by side), plus neck and abdomen. Command neurons overlay what the fly
   "decides": walk (DNg100), turn (DNa02 left vs right), escape (DNp01, the giant fiber), back up
   (MDN), groom (DNg11), sing (pIP10).
+* **3D body**: NeuroMechFly (EPFL, Apache-2.0; Lobato-Rios et al. 2022, Wang-Chen et al. 2024), an
+  anatomically accurate fly from a micro-CT scan of a real fly (6 legs with all segments, wings,
+  halteres, head, antennae, proboscis, abdomen), rendered with MuJoCo and posed frame by frame by the
+  same motor neurons (each leg by its own, wings by flight power / steering, head by the neck motor
+  neurons, abdomen, jump muscle on the middle legs; fixed scale: +10 spikes/neuron/s = full movement).
+  No muscles, physics, gait or wingbeat is invented. It runs in its own environment because flygym needs
+  Python 3.12: `D:ly-body\.venv` (`py -3.12 -m venv D:ly-body\.venv` then
+  `D:ly-body\.venv\Scripts\pip install flygym==2.1.0`, ~680 MB), or set `FLY_BODY_PY`; `watch.py`
+  renders `body3d.mp4` after each video when it is there, or run `body3d.py out\watch\<name>` with it.
 * **Emotions**: populations that carry internal states in real flies, against the same brain at
   rest: fear (giant-fiber escape circuit), pleasure (PAM dopamine), distress (PPL1 dopamine),
   excitement (octopamine), desire (pC1), anger (aIPg), mood (serotonin), appetite (NPF). A readout
@@ -305,6 +314,7 @@ the beeps (9.1 during a beep, 3.8 between).
 | `physio.py`, `calibrate_gs.py` | the real-fly checks (gratings, edges) and the one calibration |
 | `flyears/senses.py` | colour vision, smell, taste, wind, temperature, humidity, touch; memory, compass, clock readouts |
 | `ui.py`, `ui.html`, `view.html`, `retro.css` | the browser pages (port 8790) |
+| `body3d.py` | the 3D body: NeuroMechFly posed by the motor neurons (run with the D:\fly-body environment) |
 | `audit.py` | checks a watched video: timing, re-simulation, no phantom responses |
 | `run.py` | everything, and the report |
 

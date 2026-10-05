@@ -6,3 +6,4 @@ out_*.log
 __pycache__/
 *.pyc
 .pytest_cache/
+.venv-body/

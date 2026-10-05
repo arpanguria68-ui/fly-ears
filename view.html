@@ -89,7 +89,12 @@ canvas{display:block;width:100%;height:auto}
     <div class="screen" style="padding:4px"><canvas id="brain" width="520" height="520"></canvas></div>
    </section>
    <section class="card"><h2><span>Body</span><span id="act">resting</span></h2>
-    <div class="screen" style="padding:4px"><canvas id="body" width="520" height="520"></canvas></div>
+    <div class="screen" style="padding:4px;position:relative">
+     <video id="body3d" muted playsinline style="display:none;width:100%;aspect-ratio:4/3;background:#000;border-radius:3px"></video>
+     <canvas id="body" width="520" height="520"></canvas>
+    </div>
+    <div class="row" style="margin-top:6px;gap:6px"><button type="button" id="b3d" hidden>3D body</button><button type="button" id="b2d" hidden>2D diagram</button>
+     <span class="note" id="bodynote" style="margin:0"></span></div>
    </section>
   </div>
   <section class="card"><h2><span>Emotions now</span><span>vs rest</span></h2>
@@ -110,8 +115,9 @@ canvas{display:block;width:100%;height:auto}
   <div><b>Modelled by this program, then injected</b> <span id="visionmode"></span>: the light at each photoreceptor's own
   eye column (R8 green, R7 blue); 8 frequency bands into the ears, JO-B low and JO-A high (an assumption); smells and tastes
   into their receptors. The connectome does the rest. <span id="assistnote"></span></div>
-  <div><b>Drawn, not simulated</b>: the fly's body is a picture posed by its motor neurons (no muscles or physics,
-  no wingbeat: real wings beat 200 times a second); "emotion" words name populations, not feelings.
+  <div><b>Drawn, not simulated</b>: the fly's body (NeuroMechFly's 3D anatomy, or the 2D diagram) is posed by its motor
+  neurons, each part in proportion to its own motor neurons' activity above rest (no muscles or physics, no gait or
+  wingbeat: real wings beat 200 times a second); "emotion" words name populations, not feelings.
   Scales are fixed for every video: a full bar = +10 spikes/neuron/s, an emotion bar = +-5,
   and a state is named only at +1 or more. Brain map: up to 3,000 of the spikes each frame.</div>
  </div>
@@ -191,6 +197,7 @@ async function load() {
   $("title").textContent = name;
   $("meta").textContent = `${Math.round(V.seconds)} s from ${fmt(V.start)} · ${V.vision === "fly-own" ? "fly-own vision" : "ASSISTED vision (detectors of this program)"}${V.rewired ? " · scrambled brain" : ""}${V.sound ? "" : " · no sound"}`;
   $("v").src = base + "clip.mp4";
+  fetch(base + "body3d.mp4", { method: "HEAD" }).then((r) => { if (r.ok) setupBody3d(); }).catch(() => {});
   const own = V.vision === "fly-own";
   $("visionmode").textContent = own ? "(fly-own vision)" : "(ASSISTED vision)";
   $("assistnote").textContent = own ? "Fly-own vision: the optic lobe is simulated graded with each cell type's own speed, as in a real fly, the rest of the brain spiking; checked: T4 bright / T5 dark edges, direction selectivity (weak), looming drives LPLC2 and the giant fiber (physio.py)."
@@ -515,6 +522,28 @@ function drawStimStrip(g, W, labelW, t) {
     g.font = "11px IBM Plex Mono"; g.textAlign = "left"; g.fillText(name, x0 + 3, 16 + 12 * (k % 2)); });
 }
 
+// ---------------------------------------------------------------- the 3D body (NeuroMechFly), synced to the clip
+let BODY3D = false;
+function setupBody3d() {
+  const b = $("body3d");
+  b.src = base + "body3d.mp4";
+  const show = (three) => { BODY3D = three; b.style.display = three ? "block" : "none"; $("body").style.display = three ? "none" : "block";
+    $("b3d").disabled = three; $("b2d").disabled = !three;
+    $("bodynote").textContent = three ? "NeuroMechFly (EPFL): a real fly's anatomy, posed by its motor neurons" : "diagram with behaviour arrows"; };
+  $("b3d").hidden = $("b2d").hidden = false;
+  $("b3d").onclick = () => show(true); $("b2d").onclick = () => show(false);
+  const v = $("v");
+  v.addEventListener("play", () => b.play().catch(() => {}));
+  v.addEventListener("pause", () => b.pause());
+  v.addEventListener("seeked", () => { b.currentTime = v.currentTime; });
+  show(true);
+}
+function syncBody3d() {
+  if (!BODY3D) return;
+  const b = $("body3d"), v = $("v");
+  if (Math.abs(b.currentTime - v.currentTime) > 0.12) b.currentTime = v.currentTime;
+}
+
 function loop(now) {
   const v = $("v"), t = v.currentTime || 0;
   const i = Math.min(V.frames - 1, Math.floor(t * V.fps));
@@ -534,7 +563,8 @@ function loop(now) {
     last = i;
   }
   drawRetina();
-  drawBody(i, now / 1000);
+  drawBody(i, now / 1000);                                  // (also keeps the activity label right in 3D)
+  if (BODY3D) syncBody3d();
   requestAnimationFrame(loop);
 }
 load().catch((e) => { $("title").textContent = "could not load this video's data: watch it again to make it"; console.error(e); });

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -549,6 +550,12 @@ def main() -> None:
     part = out / "fly_watching.part.mp4"              # finished videos only: a stop mid-way leaves no broken file
     render(src, a.start, seconds, part, panel, sim[:6], env_frames, src.stem, a.rewired, sound=has_audio(src))
     part.replace(out / "fly_watching.mp4")
+    body_py = Path(os.environ.get("FLY_BODY_PY") or r"D:ly-body\.venv\Scripts\python.exe")
+    if body_py.exists():                              # the 3D body (NeuroMechFly), in its own environment
+        log("  posing the 3D body (NeuroMechFly)...")
+        r = subprocess.run([str(body_py), str(HERE / "body3d.py"), str(out)], capture_output=True, text=True)
+        log("  " + (r.stdout.strip().splitlines() or ["(no output)"])[-1] if r.returncode == 0
+            else f"  3D body skipped: {(r.stderr.strip().splitlines() or ['error'])[-1]}")
     log(f"done: {out / 'fly_watching.mp4'}")
 
 

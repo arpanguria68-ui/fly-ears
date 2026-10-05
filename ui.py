@@ -158,6 +158,16 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 left -= len(chunk)
 
+    def do_HEAD(self):
+        """Whether a result file exists (the viewer asks before showing the 3D body)."""
+        path = unquote(urlparse(self.path).path)
+        f = safe_child(WATCH, path[len("/media/"):]) if path.startswith("/media/") else None
+        self.send_response(200 if f else 404)
+        if f:
+            self.send_header("Content-Length", str(f.stat().st_size))
+            self.send_header("Content-Type", mimetypes.guess_type(str(f))[0] or "application/octet-stream")
+        self.end_headers()
+
     def do_GET(self):
         url = urlparse(self.path)
         path = unquote(url.path)
