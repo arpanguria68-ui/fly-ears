@@ -50,6 +50,20 @@ def _columns_module():
     raise ImportError("needs fly.ai's flybrain/columns.py (set FLYBRAIN_COLUMNS_SRC to a checkout that has it)")
 
 
+def _optic_columns(data: Path):
+    """The MaleCNS optic-column table (which eye column each cell is in), fetched once (~1 MB) from its
+    public source if `flybrain download` did not bring it (only `flybrain build` does)."""
+    from flybrain.build import SOURCES, optic_columns
+    target = data / "raw" / "optic-columns.xlsx"
+    if not target.exists():
+        import urllib.request
+        target.parent.mkdir(parents=True, exist_ok=True)
+        print("fetching the optic-column table (MaleCNS, ~1 MB) ...", flush=True)
+        urllib.request.urlretrieve(SOURCES["optic-columns.xlsx"], target.with_suffix(".part"))
+        target.with_suffix(".part").replace(target)
+    return optic_columns(target)
+
+
 def build_map() -> dict:
     """front/up (0..1 per eye) and eye of every L2/L3 cell; cached as <fly data>/lamina.npz."""
     data = fly_data()
@@ -58,11 +72,10 @@ def build_map() -> dict:
         z = np.load(cache)
         return {k: z[k] for k in z.files}
     columns = _columns_module()
-    from flybrain.build import optic_columns
     meta = np.load(data / "brain.npz")
     W = sparse.load_npz(data / "weights.npz").tocsr()
     ct, ids = meta["cell_type"].astype(str), meta["ids"]
-    xy, eye = columns._place(W, ct, ids, optic_columns(data / "raw" / "optic-columns.xlsx"))
+    xy, eye = columns._place(W, ct, ids, _optic_columns(data))
     t4 = np.flatnonzero(np.char.startswith(ct, "T4") & (eye != ""))
     own = dict(zip(t4, columns._offsets(W, ct, xy, t4)))
     cells = np.flatnonzero(np.isin(ct, LAMINA) & (eye != ""))
@@ -116,11 +129,10 @@ def build_eye_positions() -> dict:
         z = np.load(cache)
         return {k: z[k] for k in z.files}
     columns = _columns_module()
-    from flybrain.build import optic_columns
     meta = np.load(data / "brain.npz")
     W = sparse.load_npz(data / "weights.npz").tocsr()              # rows = postsynaptic
     ct, ids = meta["cell_type"].astype(str), meta["ids"]
-    xy, eye = columns._place(W, ct, ids, optic_columns(data / "raw" / "optic-columns.xlsx"))
+    xy, eye = columns._place(W, ct, ids, _optic_columns(data))
     out_w = abs(W).T.tocsr()                                        # rows = presynaptic
     for i in np.flatnonzero(ct == "R1-6"):                          # the cartridge they feed
         a, b = out_w.indptr[i:i + 2]

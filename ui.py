@@ -263,9 +263,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else PORT
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     server.daemon_threads = True
-    url = f"http://127.0.0.1:{PORT}/"
+    url = f"http://127.0.0.1:{port}/"
     print(f"fly-ears: {url}", flush=True)
     if "--no-browser" not in sys.argv:
         webbrowser.open(url)
