@@ -8,4 +8,4 @@ __pycache__/
 .pytest_cache/
 .venv-body/
 
-brag-output/work/
+brag-output/

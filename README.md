@@ -1,6 +1,19 @@
 # fly-ears: a real fruit fly brain watches your videos and hears your music
 
-<!-- MEDIA -->
+[![Walkthrough: a real fly brain watches a video (80 s, click to play)](docs/walkthrough.jpg)](docs/walkthrough.mp4)
+
+**[Watch the 80-second walkthrough](docs/walkthrough.mp4)**: give it a video, light enters its eyes, its own
+wiring sees an approaching disc coming, brain, body and emotions, every other sense, the music test, and
+how every run is checked.
+
+![The fly watching the test video: a dark disc approaches, its looming neurons (LPLC2) fill, the brain map lights up](docs/demo.gif)
+
+| the Watch page | the Brain & Body viewer |
+|---|---|
+| ![Watch page: paste a link or pick a file, press Watch; the job log on the right](docs/watch.png) | ![Viewer: the video, the brain map, a 3D fly posed by its motor neurons, emotions](docs/viewer.jpg) |
+| **Inside the brain:** the retina, both eyes' motion detectors at their places in the eye | |
+| ![Inside the brain: retina, left and right eye T4/T5 maps, ears](docs/inside.jpg) | |
+
 
 A video or a song goes into the eyes and ears of the complete fruit fly connectome (MaleCNS: 166,700
 neurons, 25.6 M connections from an electron-microscope map, simulated by `flybrain` from
