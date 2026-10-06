@@ -75,8 +75,9 @@ Your videos, songs and results stay on your PC (`out/` and `songs/` are ignored 
 ..\firefly\.venv\Scripts\python.exe watch.py my_video.mp4 --rewired      # scrambled brain, to compare
 ```
 
-Links need `yt-dlp` (`pip install yt-dlp`); a downloaded file works without it. Use videos you
-have the right to download and use.
+Links need `yt-dlp` (`pip install yt-dlp`); a downloaded file works without it. Use only videos
+you own or are licensed to use: downloading may be restricted by the site's terms, and other people's
+videos are copyrighted. Don't publish results made from videos you have no rights to.
 
 Every frame (25 a second = two 20 ms brain steps; 50 for 50 fps videos) reaches the brain the way a
 fly would get it. The frame is spread over both eyes, its left half on the left eye (front of each eye
@@ -433,6 +434,9 @@ populations, not feelings; populations under 10 neurons are marked noisy.
 Your audio files stay on your PC: `songs/` is ignored by git, and nothing is uploaded.
 
 ## Credits and licences
+
+A non-commercial research project. The walkthrough and demo use a synthetic test video made for this
+project; no third-party footage is included.
 
 This code: MIT (`LICENSE`). The brain simulator `flybrain` is from [fly.ai](https://github.com/alextitonis/fly.ai)
 (MIT). The connectome is MaleCNS v1.0 (Janelia FlyEM and collaborators), used under
