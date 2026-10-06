@@ -306,6 +306,11 @@ class Panel:
         known = np.all(np.isfinite(pos), 1)
         pos = np.where(known[:, None], pos, np.nanmean(pos[known], 0))     # (a few neurons have no position)
         self.known = known
+        # the looming meters: the fly's own LPLC2 spikes per side (fly-own), or our detector (assisted)
+        self.lplc2_side = np.zeros(brain.n, np.int8)
+        self.lplc2_side[eyes.lplc2["L"]], self.lplc2_side[eyes.lplc2["R"]] = 1, 2
+        self.lplc2_n = (max(1, len(eyes.lplc2["L"])), max(1, len(eyes.lplc2["R"])))
+        self.lplc2_rest = float(rest[names.index("LPLC2 (looming)")])
         lo, hi = pos[known].min(0), pos[known].max(0)
         sc = min((bw - 20) / (hi[0] - lo[0]), (bh - 20) / (hi[1] - lo[1]))
         xy = (pos - lo) * sc
@@ -361,8 +366,14 @@ class Panel:
         for b in range(ear.N_BANDS):                       # what the ears get, low to high
             h = int(np.clip(env[b], 0, 1) * 110)
             rect(img, 40 + b * 40, 556 + 125 - h, 30, h, CYAN)
-        for s, v in enumerate(loom):
-            meter(img, 420 + s * 180, 676, 160, 10, v / vision.CAP, (255, 90, 210))
+        if VISION == "assisted":
+            vals = [v / vision.CAP for v in loom]
+        else:                                              # spikes/neuron/s above rest; full at +10, as the viewer
+            side = self.lplc2_side[spikes] if len(spikes) else np.zeros(0, np.int8)
+            sec = STEPS_PER_FRAME * 0.020
+            vals = [((side == k + 1).sum() / self.lplc2_n[k] / sec - self.lplc2_rest) / 10 for k in range(2)]
+        for s, v in enumerate(vals):
+            meter(img, 420 + s * 180, 676, 160, 10, v, (255, 90, 210))
         return img
 
 
@@ -378,7 +389,8 @@ def labels(seconds: float, title: str, rewired: bool) -> str:
              t("01 WHAT IT SEES AND HEARS", 24, 52, 14), t("02 ALL 166,700 NEURONS (AMBER = FIRING)", 812, 52, 14),
              t("03 LEFT EYE T4/T5 SPIKES", 812, 380, 14), t("RIGHT EYE T4/T5 SPIKES", 1042, 380, 14),
              t("04 RESPONSE", 812, 536, 14), t("05 EARS 80 Hz - 1.2 kHz", 24, 536, 14),
-             t("LOOMING  L", 420, 660, 13, "0xebe5d7"), t("R", 600, 660, 13, "0xebe5d7")]
+             t("OUR LOOMING DETECTOR  L" if VISION == "assisted" else "LPLC2 SPIKES  L", 420 - (100 if VISION == "assisted" else 30),
+               660, 13, "0xebe5d7"), t("R", 600, 660, 13, "0xebe5d7")]
     for r, (label, _) in enumerate(Panel.LIST):
         items.append(t(label, 824, 566 + r * 25, 14, "0xebe5d7"))
     items.append(f"drawtext=fontfile='{f}':text='%{{pts\\:hms}}':x=1150:y=13:fontsize=16:fontcolor=0xebe5d7")
