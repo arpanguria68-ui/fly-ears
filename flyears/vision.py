@@ -36,8 +36,13 @@ def fly_data() -> Path:
 
 def load_columns() -> dict | None:
     f = fly_data() / "columns.npz"
-    if not f.exists():
-        return None
+    if not f.exists():                                   # the T4/T5 eye map: built once by flybrain (a few s)
+        try:
+            from .lamina import _columns_module
+            _columns_module().eye_map(fly_data())
+        except Exception as e:                           # noqa: BLE001 - say so, never fail silently
+            print(f"no T4/T5 eye map ({e}); motion groups and eye maps are left out", flush=True)
+            return None
     d = np.load(f, allow_pickle=True)
     return {k: d[k] for k in d.files}
 
