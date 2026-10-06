@@ -1,5 +1,7 @@
 # fly-ears: a real fruit fly brain watches your videos and hears your music
 
+**Project page: <https://arpanguria68-ui.github.io/fly-ears/>**
+
 [![Walkthrough: a real fly brain watches a video (80 s, click to play)](docs/walkthrough.jpg)](docs/walkthrough.mp4)
 
 **[Watch the 80-second walkthrough](docs/walkthrough.mp4)**: give it a video, light enters its eyes, its own

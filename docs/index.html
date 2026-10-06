@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fly-ears: a real fly brain watches your videos</title>
+<meta name="description" content="The complete fruit fly connectome (166,700 neurons) watches your videos and hears your music through its own photoreceptors and ears. Brain, 3D body, emotions, and honest checks.">
+<meta property="og:title" content="fly-ears: a real fruit fly brain watches your videos">
+<meta property="og:description" content="166,700 neurons wired from an electron-microscope map see your video through their own photoreceptors. Open source, one GPU, honest checks.">
+<meta property="og:image" content="https://arpanguria68-ui.github.io/fly-ears/walkthrough.jpg">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23c41f29'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23ffb23e'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@1,100,900;1,125,900&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<header class="deck">
+  <div class="wrap">
+    <a class="logo" href="#top">fly-ears<small>EARS &amp; EYES &middot; FB-166700</small></a>
+    <nav class="keys" aria-label="sections">
+      <a class="key" href="#how"><i></i>How</a>
+      <a class="key" href="#sees"><i></i>Results</a>
+      <a class="key" href="#checks"><i></i>Checks</a>
+      <a class="key" href="#start"><i></i>Run it</a>
+      <a class="key red" href="https://github.com/arpanguria68-ui/fly-ears"><i></i>GitHub</a>
+    </nav>
+  </div>
+</header>
+<div class="ribs"></div>
+
+<main id="top">
+<div class="wrap">
+  <div class="hero">
+    <div class="eyebrow"><b>open source</b> computational neuroscience</div>
+    <h1>A real fruit fly brain <em>watches your videos</em> and hears your music.</h1>
+    <p class="lede">Give it a link or a file. The light reaches the photoreceptors of the complete fruit fly
+      connectome at their real eye columns, the soundtrack reaches its ears, and from there it is only the fly's
+      own wiring: nothing trained, nothing drawn in. You see every neuron that fires, a 3D fly posed by its own
+      motor neurons, and what its brain makes of what it saw.</p>
+    <div class="cta">
+      <a class="btn red" href="https://github.com/arpanguria68-ui/fly-ears">View on GitHub</a>
+      <a class="btn" href="#start">Run it yourself</a>
+      <a class="btn" href="https://github.com/arpanguria68-ui/fly-ears/releases/tag/v0.1.0">Release v0.1.0</a>
+    </div>
+    <div class="tv">
+      <video src="walkthrough.mp4" poster="walkthrough.jpg" controls preload="none" playsinline aria-label="80-second walkthrough of fly-ears"></video>
+    </div>
+    <p class="muted" style="font-size:15px;margin-top:12px">The 80-second walkthrough. Every shot is the real app recording a real run.</p>
+    <div class="stats">
+      <div class="stat"><b>166,700</b><span>neurons, every one simulated (MaleCNS connectome)</span></div>
+      <div class="stat"><b>25.6 M</b><span>connections, mapped with an electron microscope</span></div>
+      <div class="stat"><b>6,006</b><span>photoreceptors, each at its real eye column</span></div>
+      <div class="stat"><b>0.7 s</b><span>of compute per second of video on one GPU</span></div>
+    </div>
+  </div>
+
+  <section id="how">
+    <div class="mod"><b>01</b> how it works</div>
+    <h2>From your video to the fly's motor neurons</h2>
+    <p class="muted">Only the first step, light and sound into the receptor neurons, is a model of ours. After
+      that every step is the connectome.</p>
+    <div class="flow" role="list">
+      <div class="node ours" role="listitem"><div class="n">your video</div><b>frames + sound</b><span>25 or 50 frames a second, in the video's own time</span></div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="node ours" role="listitem"><div class="n">the eye</div><b>optics, light, colour</b><span>~5&deg; blur per ommatidium, physical light, rhodopsin weights</span></div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="node fly" role="listitem"><div class="n">photoreceptors</div><b>R1-6, R7, R8</b><span>adapt like real ones: same contrast, same response</span></div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="node fly" role="listitem"><div class="n">optic lobe</div><b>graded neurons</b><span>lamina, medulla, T4/T5, lobula, with measured speeds</span></div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="node fly" role="listitem"><div class="n">central brain</div><b>spiking neurons</b><span>looming LPLC2, escape giant fiber, compass, memory</span></div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="node fly" role="listitem"><div class="n">body</div><b>motor neurons</b><span>pose a 3D NeuroMechFly: wings, legs, head</span></div>
+    </div>
+    <div class="legend"><span><i style="background:var(--amber)"></i>modelled by this program</span><span><i style="background:var(--green)"></i>the fly's own wiring</span></div>
+    <div class="grid3" style="margin-top:26px">
+      <div class="plate"><h3>Ears</h3><p class="muted">The soundtrack in 8 frequency bands into Johnston's organ, the fly's ear (138 neurons), then the hearing relay and beyond.</p></div>
+      <div class="plate"><h3>Every other sense</h3><p class="muted">Smell, taste, wind, heat, cold, humidity and touch, scheduled into their own receptor neurons while the video plays.</p></div>
+      <div class="plate"><h3>Read out, not invented</h3><p class="muted">Fear, appetite, compass heading, memory and clock are spike rates of the populations that carry them in real flies, against the same brain at rest.</p></div>
+    </div>
+  </section>
+
+  <section id="sees">
+    <div class="mod"><b>02</b> result</div>
+    <h2>Its own wiring sees it coming</h2>
+    <div class="split">
+      <figure><div class="tv"><img src="demo.gif" alt="The fly watching the test video: a dark disc approaches, its looming neurons LPLC2 fill on both sides and the brain map lights amber" loading="lazy"></div></figure>
+      <div>
+        <p>A test video with known events: bars sliding, then a dark disc rushing at the camera. Nothing of this
+          program detects looming; the light goes only into the photoreceptors. The fly's looming neurons and its
+          escape neuron fire more for the approaching disc than for the sliding bars, in 5 of 5 noise seeds.</p>
+        <div class="bars" role="img" aria-label="Spikes per neuron per second. LPLC2: approaching disc 2.98, sliding bars 1.69, rest 0.93. Giant fiber: disc 2.39, bars 1.03, rest 0.35.">
+          <h3>spikes per neuron per second, mean of 5 seeds</h3>
+          <div class="row"><span>LPLC2, disc</span><div class="track"><div class="fill" style="width:93%;background:var(--pink)"></div></div><b>2.98</b></div>
+          <div class="row"><span>LPLC2, bars</span><div class="track"><div class="fill" style="width:53%;background:var(--pink);opacity:.55"></div></div><b>1.69</b></div>
+          <div class="row"><span>LPLC2, rest</span><div class="track"><div class="fill" style="width:29%;background:#6b6760"></div></div><b>0.93</b></div>
+          <div class="row"><span>escape, disc</span><div class="track"><div class="fill" style="width:75%;background:var(--amber)"></div></div><b>2.39</b></div>
+          <div class="row"><span>escape, bars</span><div class="track"><div class="fill" style="width:32%;background:var(--amber);opacity:.55"></div></div><b>1.03</b></div>
+          <div class="row"><span>escape, rest</span><div class="track"><div class="fill" style="width:11%;background:#6b6760"></div></div><b>0.35</b></div>
+          <p class="note">LPLC2: the looming-sensitive lobula neurons. Escape: DNp01, the giant fiber. Run <code>looming.py</code> to reproduce.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="app">
+    <div class="mod"><b>03</b> the app</div>
+    <h2>Watch, then look inside</h2>
+    <div class="grid2">
+      <figure class="plate"><img class="shot" src="watch.png" alt="The Watch page: a video path, start and length, the Watch key, and the job log on the right" loading="lazy">
+        <figcaption><b>Watch.</b> Paste a link or pick a file, choose where to start, press Watch. The log shows the fly at work.</figcaption></figure>
+      <figure class="plate"><img class="shot" src="viewer.jpg" alt="The Brain and Body viewer: the video, the brain map in amber, a 3D fly, emotion bars, senses and commands" loading="lazy">
+        <figcaption><b>Brain &amp; body.</b> The clip beside every neuron that fires, a 3D fly posed by its motor neurons, emotion readouts and behaviour commands, all in sync.</figcaption></figure>
+      <figure class="plate"><img class="shot" src="inside.jpg" alt="Inside the brain: the retina, the left and right eye T4/T5 motion detector maps, the ear's frequency bands" loading="lazy">
+        <figcaption><b>Inside the brain.</b> What the eyes get, both eyes' 13,581 motion detectors at their places in the eye, the ear's bands, left versus right, a spike raster of real neurons.</figcaption></figure>
+      <div class="plate">
+        <h3>Human or AI music?</h3>
+        <p class="muted">The second half of the project plays songs into the fly's ears and asks, with questions fixed
+          before running, whether its brain's response tells human-made from AI-generated music, beyond what its
+          ears got and beyond a scrambled brain. Unbiased by design: same loudness, same codec, fixed clips, splits
+          by song, permutation nulls.</p>
+        <p class="muted">On the synthetic method check, plain audio separated the classes (AUC 0.94) and the fly brain
+          did not (0.44). The report says so.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="checks">
+    <div class="mod"><b>04</b> checked</div>
+    <h2>Checked against a real fly, and against itself</h2>
+    <p class="muted">Each claim has a script that reproduces it. The weak spots are on this list too.</p>
+    <div class="plate tablewrap">
+      <table>
+        <thead><tr><th>check</th><th>result</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Every watched video re-simulated from its inputs (<code>audit.py</code>)</td><td>the same, step for step, bit for bit</td><td><span class="ok">PASS</span></td></tr>
+          <tr><td>1 s of video = 1 s of brain time</td><td>20 ms steps, every frame shown for exactly its time</td><td><span class="ok">PASS</span></td></tr>
+          <tr><td>Nothing to see or hear: do the senses stay at rest?</td><td>a grey view in silence leaves them at rest</td><td><span class="ok">PASS</span></td></tr>
+          <tr><td>Eye orientation, against the 3-D anatomy</td><td>lamina front = anterior (r 0.88 / 0.72), up = dorsal (0.94 / 0.99); medulla front/back crossed, as the optic chiasm does</td><td><span class="ok">PASS</span></td></tr>
+          <tr><td>T4 likes bright edges, T5 dark edges (<code>physio.py</code>)</td><td>T4 +0.040 vs -0.031; T5 -0.039 vs +0.030</td><td><span class="ok">PASS</span></td></tr>
+          <tr><td>Approaching disc vs sliding bars (<code>looming.py</code>)</td><td>looming and escape neurons respond more, 5 of 5 seeds</td><td><span class="ok">PASS</span></td></tr>
+          <tr><td>T4/T5 prefer the real fly's directions</td><td>13 of 16 subtype &times; eye groups</td><td><span class="mid">MOSTLY</span></td></tr>
+          <tr><td>How strongly they prefer it (direction selectivity)</td><td>0.04 here; 0.3-0.8 in a real fly</td><td><span class="no">WEAK</span></td></tr>
+          <tr><td>Fly brain tells human from AI music (method check)</td><td>AUC 0.44, not above chance</td><td><span class="no">NO</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="grid2" style="margin-top:18px">
+      <div class="callout"><h3>What is real</h3><p>Every spike, rate, raster mark and bar comes from stepping the MaleCNS connectome in the video's own time. Re-running a video gives the same numbers, bit for bit.</p></div>
+      <div class="callout"><h3>What is not like a real fly</h3><p>The video is spread over each eye's whole field like a panoramic screen. The dataset has fewer R1-6 photoreceptors than a real eye. Synapses take one 20 ms step. The 3D body is posed, not simulated with muscles.</p></div>
+    </div>
+  </section>
+
+  <section id="start">
+    <div class="mod"><b>05</b> run it</div>
+    <h2>Run it on your own videos</h2>
+    <p class="muted">Python 3.10+, <code>ffmpeg</code>, and an NVIDIA GPU for real time (a CPU works, slowly). The brain
+      (~260 MB) is downloaded once.</p>
+    <div class="codebox">
+      <button class="copy" type="button" data-copy="setup">COPY</button>
+<pre id="setup"><span class="c"># the brain, next to fly-ears, in a folder named firefly</span>
+git clone https://github.com/arpanguria68-ui/flybrain-nes firefly
+git clone https://github.com/arpanguria68-ui/fly-ears
+cd firefly
+python -m venv .venv
+.venv/Scripts/pip install -r requirements.txt
+.venv/Scripts/pip install -r requirements-gpu.txt   <span class="c"># NVIDIA GPU</span>
+.venv/Scripts/python -m flybrain download
+cd ../fly-ears
+
+<span class="c"># the test video, then the browser app on http://127.0.0.1:8790/</span>
+../firefly/.venv/Scripts/python make_test_video.py
+../firefly/.venv/Scripts/python ui.py</pre>
+    </div>
+    <p class="muted" style="margin-top:12px">On Linux and macOS use <code>.venv/bin/</code>. Optional: the 3D body (NeuroMechFly, Python 3.12) and
+      <code>yt-dlp</code> for links. Use videos you have the right to use; your videos and results stay on your PC.
+      Full details in the <a href="https://github.com/arpanguria68-ui/fly-ears#setup">README</a>.</p>
+  </section>
+
+  <section>
+    <div class="mod"><b>06</b> sister project</div>
+    <a class="sister" href="https://arpanguria68-ui.github.io/fly-plays-nes/">
+      <img src="https://arpanguria68-ui.github.io/fly-plays-nes/play.jpg" alt="FLYBRAIN NES: the Play page with Galaga, the controller and the nervous system" loading="lazy">
+      <div><b>FLYBRAIN &middot; NES</b><span>The same fly brain plays NES games live: it sees through its motion detectors and its neurons press the buttons.</span></div>
+    </a>
+  </section>
+</div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Code: MIT. The brain simulator <code>flybrain</code> is from <a href="https://github.com/alextitonis/fly.ai">fly.ai</a> (MIT).
+      Connectome: <a href="https://male-cns.janelia.org/download/">MaleCNS v1.0</a> (Janelia FlyEM and collaborators, CC BY 4.0).
+      3D fly: <a href="https://github.com/NeLy-EPFL/flygym">NeuroMechFly / flygym</a> (EPFL, Apache-2.0).
+      Physiology compared with Maisak et al. 2013, Behnia et al. 2014, Arenz et al. 2017, Salcedo et al. 1999.</p>
+    <p>Emotion words name neuron populations, not measured feelings.</p>
+  </div>
+</footer>
+<script>
+document.querySelectorAll(".copy").forEach((b) => b.addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).innerText); b.textContent = "COPIED"; }
+  catch (e) { b.textContent = "SELECT + COPY"; }
+  setTimeout(() => { b.textContent = "COPY"; }, 1600);
+}));
+</script>
+</body>
+</html>
